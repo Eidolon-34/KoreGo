@@ -15,7 +15,7 @@ import static org.junit.Assert.*;
 public class PreviewTest {
     @Test public void renderLandscapeScreensOnAndroid35() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
-            MainActivity app = controller.get();
+            MainActivity app = controller.get(); new PinGate(app).verify("9818");
             Method start = MainActivity.class.getDeclaredMethod("startSession", boolean.class); start.setAccessible(true); start.invoke(app, true);
             Method sample = MainActivity.class.getDeclaredMethod("generateDemo"); sample.setAccessible(true); for (int i = 0; i < 96; i++) sample.invoke(app);
             Field tab = MainActivity.class.getDeclaredField("tab"); tab.setAccessible(true);

@@ -59,6 +59,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private final Runnable tick = new Runnable() {
         public void run() {
             if (!visible) return;
+            if (running && !gate.unlocked()) { stopSession(false); status("One-hour unlock expired; discovery stopped"); }
             if (running && demo) generateDemo();
             if (dirty || (!track.isEmpty() && tab == 1)) { render(); dirty = false; }
             ui.postDelayed(this, 1000);
@@ -101,7 +102,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         if (content == null) return;
         content.removeAllViews(); statusLine.setText(status);
         for (int i = 0; i < navButtons.length; i++) if (navButtons[i] != null) styleButton(navButtons[i], i == tab);
-        headline.setText(running ? (demo ? "DEMO · NO RADIOS" : "LIVE · ANDROID") : replay ? "REPLAY · NO RADIOS" : "LOCKED · LOCAL ONLY");
+        headline.setText(OverlayService.active()?"OVERLAY // ACTIVE":running ? (demo ? "DEMO · NO RADIOS" : "LIVE · ANDROID") : replay ? "REPLAY · NO RADIOS" : "LOCKED · LOCAL ONLY");
         if (tab == 0) overview(); else if (tab == 1) signals(); else if (tab == 2) mapScreen(); else if (tab == 3) sessions(); else settings();
     }
     private void overview() {
@@ -122,14 +123,16 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         actions.addView(button("Demo", () -> { if (running) stopSession(false); authenticate("Start a simulated session", () -> startSession(true)); }), new LinearLayout.LayoutParams(0, dp(58), 1));
         content.addView(actions);
         LinearLayout radios = row();
-        radios.addView(button("Wi-Fi scan approval…", this::wifiConsent), new LinearLayout.LayoutParams(0, dp(56), 1));
+        radios.addView(button("Request fresh Wi-Fi scan…", this::wifiConsent), new LinearLayout.LayoutParams(0, dp(56), 1));
         radios.addView(button("Passive USB receiver…", () -> authenticate("Approve passive USB receiver", this::attachUsb)), new LinearLayout.LayoutParams(0, dp(56), 1));
         content.addView(radios);
+        if(running&&!demo)note(scanner.wifiStatus());
         note("Discovery listens for Android Wi-Fi result broadcasts and scans BLE advertisements. Android / Bluetooth firmware can send standard discovery traffic; this is not guaranteed RF-silent. No auto-connect, password attacks, deauthentication, or packet injection.");
         note("GPS fields mark the receiver's position, not the transmitter. RSSI tracking shows relative strength, not distance or a precise device location.");
-        if (gate.isDefault()) note("Initial passcode: 9818. Change it in System before connected training. Each scan session, export, and connected action requires approval.");
+        if (gate.isDefault()) note("Initial passcode: 9818. Change it in System before connected training. A successful unlock lasts one hour. Connected actions still need informed-consent confirmation.");
     }
     private void signals() {
+        if(running&&!demo){note(scanner.wifiStatus());content.addView(button("Request fresh Wi-Fi scan…",this::wifiConsent));}
         LinearLayout choices = row();
         for (String value : new String[]{"Priority", "Wi-Fi", "BLE", "All"}) choices.addView(button(value, () -> { filter = value; dirty = true; render(); }), new LinearLayout.LayoutParams(0, dp(50), 1));
         content.addView(choices);
@@ -164,9 +167,10 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         else note("Tap a signal to track it or inspect its evidence. Showing up to 100 rows by strength; full observations remain in session logs.");
     }
     private void detail(JSONObject row) {
-        String[] options = row.optString("radio").equals("BLE") ? new String[]{"Track signal", "View recorded data", "Consented service inventory…", "Show on map"} : new String[]{"Track signal", "View recorded data", "Review advertised security", "Show on map"};
+        String[] options = row.optString("radio").equals("BLE") ? new String[]{"Track signal", "View recorded data", "Consented service inventory…", "Show on map", "GPS / photo / nickname"} : new String[]{"Track signal", "View recorded data", "Review advertised security", "Show on map", "GPS / photo / nickname"};
         new AlertDialog.Builder(this).setTitle(row.optString("address")).setItems(options, (d, index) -> {
             if (index == 0) { track = row.optString("radio") + "/" + row.optString("address"); trace.clear(); tab = 1; render(); }
+            else if(index==4){authenticate("Open private ping notes",()->{try{String id=PingStore.get(this).observe(row);if(id!=null)startActivity(new Intent(this,PingEditorActivity.class).putExtra("ping_id",id));else message("Annotation limit","Export/remove saved ping notes before adding more.");}catch(Exception e){status(e.getMessage());}});}
             else if(index==3){track=row.optString("radio")+"/"+row.optString("address");tab=2;render();}
             else if (index == 1) { try { message("Recorded observation", row.toString(2)); } catch (Exception ignored) {} }
             else if (row.optString("radio").equals("BLE")) labConsent(row);
@@ -181,6 +185,8 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         if (array != null) for (int i = 0; i < array.length(); i++) result.add(array.optString(i)); return result;
     }
     private void mapScreen() {
+        content.addView(button(OverlayService.active()?"Stop Maps overlay":"Overlay on Google / other Maps…",()->{if(OverlayService.active())stopService(new Intent(this,OverlayService.class).setAction(OverlayService.STOP));else authenticate("Approve Maps overlay",this::overlaySetup);}));
+        content.addView(button("Ping field notes / photos",()->authenticate("Open private ping notes",()->startActivity(new Intent(this,PingListActivity.class)))));
         content.addView(text("SIGNAL CARTOGRAPHY // "+(demo?"DEMO":replay?"HISTORICAL":"LOCAL"),19,AMBER));
         LinearLayout tools=row();
         tools.addView(button("+",()->mapView.zoom(1)),new LinearLayout.LayoutParams(0,dp(50),1));
@@ -199,9 +205,24 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         note(estimate==null?"Origin unresolved. A tentative model needs 8+ accurate GPS positions around a stationary source, ≥60 m coverage, turns, and varied RSSI. Straight routes, weak fits, mocked GPS, and sparse data produce no estimate.":String.format(Locale.ROOT,"%sRSSI MODEL SEARCH AREA // ±%.0f m footprint · %.1f dBm fit residual. Assumes a stationary transmitter and simple propagation; NOT measured coordinates or a statistical confidence interval.",estimate.demo?"DEMO ":"",estimate.radius,estimate.rms));
         if(mapPoints.isEmpty())note("No GPS-tagged observations yet. Grant precise location and scan outdoors, or run the synthetic demo route.");
     }
+    private boolean notificationsAsked;
+    @android.annotation.SuppressLint("SetTextI18n")
+    private void overlaySetup() {
+        if(!Settings.canDrawOverlays(this)){message("Allow drawing over other apps","The overlay is built. Grant Android's display-over-other-apps permission in System, then return to MAP and start the overlay.");startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));return;}
+        LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),dp(8));box.addView(text("Colored reception pings float above Maps. Mini-map uses its own projection; DOTS mode needs two manually aligned landmarks on a flat, static map and pauses after outside touches / 30 seconds. No Maps camera-state API is assumed.",14,TEXT));
+        CheckBox scan=new CheckBox(this);scan.setText("Continue Android discovery + GPS while Maps is visible");scan.setTextColor(TEXT);scan.setChecked(false);scan.setEnabled(!demo);box.addView(scan);
+        if(demo)box.addView(text("DEMO overlay: synthetic pings; no radios will start",14,AMBER));
+        new AlertDialog.Builder(this).setTitle("Maps overlay / foreground service").setView(box).setPositiveButton("Start approved overlay",(d,w)->{
+            if(!gate.unlocked()){authenticate("Renew overlay approval",this::overlaySetup);return;}
+            if(scan.isChecked()&&checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED){message("Location permission required","Grant precise Location in System, then approve the overlay again.");return;}
+            if(Build.VERSION.SDK_INT>=33&&!notificationsAsked&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){notificationsAsked=true;requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},40);message("Return after notification setup","Approve the overlay again after choosing your notification preference.");return;}
+            stopSession(false);try{OverlayService.startApproved(this,scan.isChecked(),demo);status("Overlay approved. Open your Maps app; use floating DOTS for calibration.");}catch(Exception e){status("Overlay unavailable: "+e.getMessage());}
+        }).setNegativeButton("Cancel",null).show();
+    }
     private void sessions() {
         content.addView(button("Choose save folder / SD card…", () -> authenticate("Choose recording destination", this::pickFolder)));
         note(tree == null ? "Save destination: private app storage. Select a writable SD folder to automatically copy completed sessions there." : "Save destination: " + tree + "\nCompleted sessions are copied as JSONL + CSV + GeoJSON. Private recovery copies remain on the radio.");
+        content.addView(button("Export ping notes + photos…",()->authenticate("Export private annotations",()->{if(tree==null){message("Choose a save folder","Select a destination first.");return;}Uri target=tree;io.execute(()->{try{PingStore.get(this).export(target);ui.post(()->status("Exported ping notes, GeoJSON, and private photos"));}catch(Exception e){ui.post(()->status("Annotation export failed; private copies retained: "+e.getMessage()));}});})));
         content.addView(button("Export consent audit…", () -> authenticate("Export consent audit", this::exportAudit)));
         List<File> files = store.files();
         if (files.isEmpty()) note("No saved sessions yet.");
@@ -215,26 +236,30 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         }
     }
     private void settings() {
+        content.addView(button("Lock now",()->{gate.lock();stopSession(false);stopService(new Intent(this,OverlayService.class).setAction(OverlayService.STOP));status("Locked; overlay and discovery stopped");render();}));
+        note(gate.unlocked()?"UNLOCKED // "+(gate.unlockRemainingMs()/60000+1)+" minutes remaining. Consent confirmation is still required for connected training.":"LOCKED // enter the passcode once for a one-hour unlock");
         content.addView(button("Change passcode…", () -> authenticate("Change passcode", this::changePin)));
         content.addView(button("Edit watchlist…", () -> authenticate("Change watchlist", () -> {
             final int authorizedEpoch = lifecycle;
             EditText edit = edit("Comma-separated names, MAC prefixes, service UUIDs"); edit.setText(watchlist);
             new AlertDialog.Builder(this).setTitle("Watchlist / substring match").setView(edit).setPositiveButton("Save", (d, w) -> {
-                if (!visible || authorizedEpoch != lifecycle) { status("Approval expired; enter the passcode again"); return; }
+                if (!visible || authorizedEpoch != lifecycle || !gate.unlocked()) { status("Approval expired; enter the passcode again"); return; }
                 watchlist = edit.getText().toString(); prefs.edit().putString("watchlist", watchlist).apply(); dirty = true; render();
             }).setNegativeButton("Cancel", null).show();
         })));
+        content.addView(button("Allow drawing over other apps…",()->{try{startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));}catch(ActivityNotFoundException e){message("Overlay settings unavailable","This ROM does not expose Android overlay permission settings.");}}));
         content.addView(button("Radio & permission diagnostics", this::diagnostics));
         content.addView(button("Grant discovery permissions…", () -> authenticate("Approve permission setup", () -> { permissionsAsked = false; requestDiscovery(); })));
         content.addView(button("Open app permissions", () -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())))));
         content.addView(button("Open Android radio settings", () -> startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS))));
         content.addView(button("Use private storage", () -> authenticate("Change destination", () -> { tree = null; prefs.edit().remove("tree").apply(); status("Private recording storage selected"); })));
-        note("No upload service, exported scanner, background scanning, BLE writes, or arbitrary firmware commands. Closing / leaving the app stops discovery and connected training. Sessions remain in private storage until explicitly deleted.");
+        note("No upload service, exported scanner, BLE writes, or arbitrary firmware commands. App-only discovery stops on exit. Explicitly approved Maps-overlay discovery uses a foreground notification until Stop, lock expiry, or task removal. Connected testing stops on exit. Sessions remain in private storage until explicitly deleted.");
         note("The USB adapter supports direct ESP32-S3 CDC-ACM with the bundled passive firmware. CP210x/CH340 bridges are not supported. Built-in Android radios cannot expose raw 802.11 frames, monitor mode, or all client-only devices. Flock signature matches are hypotheses that can be spoofed; missed detections are possible.");
-        note("Persephone RF 0.2 · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
+        note("Persephone RF 0.3 · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
     }
     private void authenticate(String reason, Runnable action) {
         if (!visible) return;
+        if(gate.unlocked()){action.run();return;}
         if (gate.remainingMs() > 0) { message("Passcode cooldown", "Try again in " + (gate.remainingMs() / 1000 + 1) + " seconds."); return; }
         final int epoch = lifecycle;
         EditText pin = edit("Passcode"); pin.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
@@ -260,11 +285,11 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         first.setInputType(18); second.setInputType(18); box.addView(first); box.addView(second);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Set a personal passcode").setView(box).setPositiveButton("Save", null).setNegativeButton("Cancel", null).create();
         dialog.setOnShowListener(d -> dialog.getButton(-1).setOnClickListener(v -> {
-            if (!visible || authorizedEpoch != lifecycle) { dialog.dismiss(); status("Approval expired; enter the passcode again"); return; }
+            if (!visible || authorizedEpoch != lifecycle || !gate.unlocked()) { dialog.dismiss(); status("Approval expired; enter the passcode again"); return; }
             String pin = first.getText().toString();
             if (!pin.matches("[0-9]{6,12}") || !pin.equals(second.getText().toString())) { second.setError("Use 6–12 matching digits"); return; }
             final int epoch = lifecycle; dialog.getButton(-1).setEnabled(false);
-            io.execute(() -> { try { if (epoch != lifecycle) return; gate.set(pin, false); ui.post(() -> { dialog.dismiss(); status("Personal passcode saved"); }); }
+            io.execute(() -> { try { if (epoch != lifecycle || !gate.unlocked()) return; gate.set(pin, false); ui.post(() -> { dialog.dismiss(); status("Personal passcode saved"); }); }
                 catch (Exception e) { ui.post(() -> { dialog.getButton(-1).setEnabled(true); second.setError(e.getMessage()); }); } });
         })); dialog.show();
     }
@@ -280,6 +305,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         if (request == 7) { status("Permissions updated. Start discovery to approve a session; missing capabilities are listed in System."); diagnostics(); }
     }
     private void startSession(boolean simulated) {
+        if(OverlayService.active()){message("Overlay discovery active","Stop the floating overlay before starting an app-only session.");return;}
         stopSession(false);
         try { session = store.new Session(simulated); }
         catch (IOException e) { status("Cannot record: " + e.getMessage()); return; }
@@ -303,6 +329,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     @Override public void observation(JSONObject row) {
         if (!running) return;
         try { DetectionAnnotator.annotate(row); } catch(JSONException invalid) { status("Invalid detector metadata"); return; }
+        try { PingStore.get(this).observe(row); } catch(JSONException invalid) { status("Ping metadata rejected"); }
         SignalMapModel.Point location=DetectionAnnotator.point(row);if(location!=null){mapPoints.addLast(location);while(mapPoints.size()>2000)mapPoints.removeFirst();}
         String key = row.optString("radio") + "/" + row.optString("address");
         live.remove(key); live.put(key, row); while (live.size() > RfCore.MAX_LIVE) { String oldest = live.keySet().iterator().next(); live.remove(oldest); smoothed.remove(oldest); }
@@ -341,7 +368,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private void audited(String action, String target, String reference, Runnable approved) {
         final int epoch = lifecycle;
         io.execute(() -> {
-            try { store.audit(action, target, reference); ui.post(() -> { if (visible && epoch == lifecycle && running && !demo && !replay) approved.run(); }); }
+            try { store.audit(action, target, reference); ui.post(() -> { if (visible && epoch == lifecycle && gate.unlocked() && running && !demo && !replay) approved.run(); }); }
             catch (Exception e) { ui.post(() -> message("Action blocked", "Cannot persist approval audit: " + e.getMessage())); }
         });
     }

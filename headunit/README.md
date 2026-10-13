@@ -2,7 +2,7 @@
 
 A small native Android app for local RF discovery and consent-based training. It lives beside the existing OUI-SPY Flutter companion and uses a separate package (`com.heathen.persephone`). The original companion/firmware are not dependencies of this APK.
 
-## What works in this build (0.2)
+## What works in this build (0.3)
 
 - Android Wi-Fi **result listening** and BLE advertisement discovery without an ESP32.
 - Optional **passive ESP32-S3 over direct USB CDC-ACM**, with bundled receive-only firmware. This adds received Wi-Fi beacons and client probe-request metadata, including devices that do not expose an AP.
@@ -11,7 +11,7 @@ A small native Android app for local RF discovery and consent-based training. It
 - Persistent Android folder selector: choose a writable SD-card folder, USB-storage folder, or another document provider. Completed sessions automatically copy there as JSONL, CSV, and GeoJSON. Private recovery copies remain if the card is missing/full.
 - Receiver GPS coordinates only from fresh, accurate fixes. Mocked GPS is excluded from mapping. Wi-Fi samples older than five seconds do not receive GPS tags, and motion/timing uncertainty expands recorded accuracy. A native interactive map draws receiver observations and a route. A gated RSSI propagation fit can show a tentative search area; no measured transmitter position is claimed.
 - Pwnagotchi-inspired companion expressions and observation epochs, without handshake collection, deauthentication, or password attacks.
-- Passcode approval before starting discovery, selecting storage, exporting/deleting/replaying data, changing settings, requesting Wi-Fi scans, and performing a connected training action.
+- One-hour passcode unlock for discovery, storage, exports, settings, and overlays, with **Lock now**. Each connected training action still needs an owner/consent reference and explicit confirmation.
 - A single connected training action: **GATT service UUID / characteristic-property inventory** of an explicitly approved, freshly observed BLE target. No characteristic reads or writes. Wi-Fi capability review is offline.
 
 This is a compiled training preview, not a claim of radio-specific hardware qualification. Hardware scanning, BLE connection behavior, USB enumeration, SD mounting, and automotive power interruption still need the acceptance checks below on the actual radio. The Amazon product page could not be verified; the app's Diagnostics screen reports the installed Android version, resolution, permissions, and exposed features.
@@ -29,7 +29,7 @@ adb install -r persephone-rf-debug.apk
 3. Enable Wi-Fi, Bluetooth, and Android Location. Grant precise location and, on Android 12+, nearby Bluetooth permissions.
 4. Logs → Choose save folder / SD card → select a writable **folder** on the card. Android 11+ can prohibit selecting storage roots; choose a subfolder such as `Persephone`.
 5. HUD → Start discovery → approve. If permissions are requested, return and press Start again to approve the actual session. After a permission denial, the next approved session can run with the remaining capabilities. System has permission setup and diagnostics controls.
-6. Stop & save finalizes the private recording and copies it to the selected folder. Leaving the app also stops/finalizes recording. Selecting a folder does not resume scanning.
+6. Stop & save finalizes the private recording and copies it to the selected folder. Leaving the app also stops/finalizes an app-only recording. An explicitly approved Maps overlay can instead continue Android discovery with a foreground notification. Selecting a folder does not resume scanning.
 
 The debug signing key varies by build machine. An update built with a different key will not install over the existing APK. Export recordings before replacing an installation; production signing is intentionally not configured here.
 
@@ -46,11 +46,11 @@ Name, service, and manufacturer evidence are shown as **unverified signatures**,
 ## Consent and passcode behavior
 
 - Salted PBKDF2-HMAC-SHA256 (120,000 rounds); passcodes are not recorded in audit logs.
-- Five failed attempts impose a persisted 60-second cooldown. Every connected action requires its own passcode approval, an owner/consent reference, and an explicit ownership/informed-consent checkbox.
+- Five failed attempts impose a persisted 60-second cooldown. A correct passcode unlocks the app for exactly one hour of elapsed time, including time spent in Maps. The lease persists across process restarts within the same boot; reboot, passcode change, or **Lock now** invalidates it. Discovery and overlay stop on expiry. Every connected action still requires an owner/consent reference and an explicit ownership/informed-consent checkbox.
 - The exact target must be a connectable BLE address observed within 30 seconds, during a real native discovery session. Demo/replay/USB observations cannot start connected training.
 - The approval audit must persist before radio actions run. Inventory closes after completion, failure, app exit, or 15 seconds. It never reads/writes characteristic values.
-- App backup/device-transfer are excluded; the only exported Android component is the launcher Activity. There is no upload service. Internet permission exists solely for an explicitly approved street basemap; it is disabled by default and whenever the app leaves the foreground. The original upstream companion's robot exploitation controls and firmware commands are not reachable from this APK.
-- The public initial PIN is a setup value, **not theft protection**. Change it. An app PIN cannot defend against root access, reflashing/uninstalling/clearing app data, changing the system clock, or extracting an unlocked SD card. SD exports are plaintext training data; private files use Android's app sandbox. UI screenshots are blocked on-device.
+- App backup/device-transfer are excluded; the only exported manifest component is the launcher Activity; a temporary Wi-Fi system-broadcast listener reads only fresh results from WifiManager, never broadcast-supplied observations. There is no upload service. Internet permission exists solely for an explicitly approved street basemap; it is disabled by default and whenever the app leaves the foreground. The original upstream companion's robot exploitation controls and firmware commands are not reachable from this APK.
+- The public initial PIN is a setup value, **not theft protection**. Change it. An app PIN cannot defend against root access, reflashing/uninstalling/clearing app data, extracting an unlocked SD card. SD exports are plaintext training data; private files use Android's app sandbox. UI screenshots are blocked on-device.
 - Operators enter consent references themselves; the app does not independently verify a volunteer's identity or consent. Use connected training while parked, with a dedicated owned/volunteer device. A passenger can operate discovery during a driving demonstration.
 
 ## Build and test
@@ -146,3 +146,18 @@ A dashed orange **MODEL SEARCH AREA** is shown only for an eligible selected sta
 **Enable street tiles…** explains privacy and requires the passcode. OSM receives the IP and requested viewport/tile area; no names, MACs, tags, or recordings are uploaded. Requests use HTTPS, an application User-Agent, visible attribution, and a 32 MiB HTTP cache honoring server headers. Only visible tiles are requested; there is no bulk/offline-area download. Disabled tiles and missing Internet leave the local overlay usable. Network enablement expires on foreground exit. [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/).
 
 Use the Nothing Phone 3 for mobile GPS/radio testing; the HiBy R4 install/launch test is also supported. Outdoor precise-location fixes are needed for a meaningful receiver route. Installing/launching is not equivalent to live RF, map-source, SD, or external-receiver qualification. The currently connected Nothing device is Android 16 / API 36; the R4 is Android 12 / API 31. Both use the same app ID/debug signing key, so updates preserve the private passcode and recordings.
+
+
+## Overlay on Google Maps / other map apps
+
+In **System**, allow **Display over other apps**, then **MAP → Overlay on Google / other Maps**. This is an ordinary Android overlay permission; Developer Options alone do not grant it. Approve the overlay while the app is visible. Allow notifications for the persistent Stop control (Android hides it in the notification shade when notification permission is denied); the floating STOP button remains available. A foreground service is used; there is no boot start, automatic restart, or separate unlimited unlock. Removing the task, Lock now, or one-hour expiry stops it.
+
+The draggable upper-left legend distinguishes cyan Flock, magenta Raven, yellow Falcon/LPR, blue BLE, and muted blue other Wi-Fi/camera candidates. **MINI** is an independent, offline map frame over any app. Tap its pings, or **PING LIST / NOTES**, for a dropdown with fresh phone GPS, photo attachment/camera, nickname, and notes. Saved-only mode starts no radios. The optional **Continue Android discovery + GPS** checkbox starts a separate recorded foreground session; leaving Main then preserves that explicitly approved session. Its Wi-Fi path still listens to platform scans; explicit fresh-scan requests remain in the app-only session. USB receivers and connected BLE inventory are not continued by the overlay.
+
+**DOTS** can align up to 24 priority pings over a **flat, static map snapshot**: enter two visible landmark coordinates ≥30 m apart, return to the map through Recents, drag A/B onto those landmarks ≥80 pixels apart, then LOCK. The overlay has no Google Maps/Waze viewport API. It cannot follow navigation, auto-centering, zoom, rotation, 3D tilt, or map animation. Outside touches pause dots; calibration expires after 30 seconds. Disable auto-follow and recalibrate after any viewport movement. For live driving use the independent mini-map or the app's own map. Accurate automatically anchored overlays require an integrated map with an exposed camera state.
+
+Dots represent the strongest reception position or a manually captured **phone position**, never a verified camera location. Unlocated signals remain available in Ping List. GPS capture accepts a non-mocked fix ≤10 seconds old and ≤100 m accuracy, waiting up to 15 seconds. Photo copies are compressed private JPEGs (≤2048 pixels, eight per ping, 128 MiB total budget), with source EXIF removed; the original gallery file is unchanged. EXIF orientation is applied before metadata is stripped. Long-press a private photo preview to remove that attachment. The annotation index holds at most 512 pings and preserves annotated entries before ordinary unannotated signals. GPS names/notes/photos survive session exit and subsequent observations. Logs → Export ping notes + photos writes JSON, GeoJSON, and photos into a new folder at the selected SAF/SD destination; private copies remain if export fails.
+
+## If Wi-Fi appears empty
+
+The default **Priority** feed hides ordinary access points. Select **Wi-Fi** or **All**. HUD and Feed show the Wi-Fi scan state independently of BLE messages. Listening discovery never calls startScan automatically; no recent system scan means no fresh AP rows. Enable Wi-Fi and Android Location, grant precise location, set a personal passcode, then use **Request fresh Wi-Fi scan** in your authorized training area. That explicit standard request can emit ordinary probes; it never connects to an AP or injects custom packets. Rejected/throttled scans are reported, cached results >30 seconds are excluded, and results are never mislabeled as fresh. Android system broadcasts are received using the exported runtime listener required for privileged framework senders, but all observed fields are obtained from WifiManager. [Android scan limits](https://developer.android.com/develop/connectivity/wifi/wifi-scan), [system broadcast receiver flags](https://developer.android.com/develop/background-work/background-tasks/broadcasts).

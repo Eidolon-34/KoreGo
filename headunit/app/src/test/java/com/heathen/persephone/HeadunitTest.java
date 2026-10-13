@@ -60,7 +60,7 @@ public class HeadunitTest {
     }
     @Test public void demoNeverEnablesConnectedTrainingAndStopsOnLeave() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
-            MainActivity app = controller.get();
+            MainActivity app = controller.get(); new PinGate(app).verify("9818");
             invoke(app, "startSession", new Class<?>[]{boolean.class}, true);
             invoke(app, "generateDemo", new Class<?>[]{});
             assertTrue((boolean) field(app, "running")); assertTrue((boolean) field(app, "demo"));
@@ -73,7 +73,7 @@ public class HeadunitTest {
     }
     @Test public void changePinApprovalExpiresOnAppLeave() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
-            MainActivity app = controller.get(); invoke(app, "changePin", new Class<?>[]{});
+            MainActivity app = controller.get(); new PinGate(app).verify("9818"); invoke(app, "changePin", new Class<?>[]{});
             android.app.AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
             Shadows.shadowOf(Looper.getMainLooper()).idle();
             controller.pause().stop().start().resume();
@@ -83,7 +83,7 @@ public class HeadunitTest {
     }
     @Test public void liveWindowIsBoundedWhileRecordingContinues() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
-            MainActivity app = controller.get(); invoke(app, "startSession", new Class<?>[]{boolean.class}, true);
+            MainActivity app = controller.get(); new PinGate(app).verify("9818"); invoke(app, "startSession", new Class<?>[]{boolean.class}, true);
             for (int i = 0; i < 600; i++) app.observation(new JSONObject().put("radio", "BLE").put("address", "sample-" + i).put("rssi", -50));
             assertEquals(512, ((Map<?, ?>) field(app, "live")).size()); assertEquals(600, field(app, "events"));
         }
@@ -96,7 +96,7 @@ public class HeadunitTest {
     }
     @Test public void initialPinBlocksActiveWifiRequest() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
-            MainActivity app = controller.get();
+            MainActivity app = controller.get(); new PinGate(app).verify("9818");
             invoke(app, "wifiConsent", new Class<?>[]{}); assertFalse((boolean) field(app, "running"));
         }
     }
@@ -111,8 +111,9 @@ public class HeadunitTest {
         @Override public Cursor queryChildDocuments(String id, String[] projection, String sort) { return new MatrixCursor(new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID}); }
         @Override public String createDocument(String parent, String mime, String name) throws FileNotFoundException {
             if (failCsv && name.endsWith(".csv")) throw new FileNotFoundException("simulated full SD card");
-            File file = new File(root, name); while (file.exists()) file = new File(root, "copy-" + file.getName());
-            try { file.createNewFile(); } catch (IOException e) { throw new FileNotFoundException(e.getMessage()); } return file.getName();
+            File directory=parent.equals("root")?root:new File(root,parent);
+            File file = new File(directory, name); while (file.exists()) file = new File(directory, "copy-" + file.getName());
+            try { if(mime.equals(DocumentsContract.Document.MIME_TYPE_DIR)){if(!file.mkdir())throw new IOException("mkdir failed");}else file.createNewFile(); } catch (IOException e) { throw new FileNotFoundException(e.getMessage()); } return root.toPath().relativize(file.toPath()).toString();
         }
         @Override public ParcelFileDescriptor openDocument(String id, String mode, CancellationSignal signal) throws FileNotFoundException { return ParcelFileDescriptor.open(new File(root, id), ParcelFileDescriptor.parseMode(mode)); }
         @Override public void deleteDocument(String id) throws FileNotFoundException { if (!new File(root, id).delete()) throw new FileNotFoundException(id); deleted++; }

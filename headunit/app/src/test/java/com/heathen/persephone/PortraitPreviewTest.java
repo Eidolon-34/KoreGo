@@ -15,7 +15,7 @@ import static org.junit.Assert.*;
 public class PortraitPreviewTest {
     @Test public void renderPhoneHudAndMap() throws Exception {
         try(ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).setup()){
-            MainActivity app=controller.get();Method start=MainActivity.class.getDeclaredMethod("startSession",boolean.class);start.setAccessible(true);start.invoke(app,true);
+            MainActivity app=controller.get();new PinGate(app).verify("9818");Method start=MainActivity.class.getDeclaredMethod("startSession",boolean.class);start.setAccessible(true);start.invoke(app,true);
             Method sample=MainActivity.class.getDeclaredMethod("generateDemo");sample.setAccessible(true);for(int i=0;i<96;i++)sample.invoke(app);
             Field tab=MainActivity.class.getDeclaredField("tab");tab.setAccessible(true);Field target=MainActivity.class.getDeclaredField("track");target.setAccessible(true);target.set(app,"Wi-Fi/02:00:00:00:00:02");
             Method render=MainActivity.class.getDeclaredMethod("render");render.setAccessible(true);File directory=new File("build/previews");directory.mkdirs();

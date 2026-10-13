@@ -11,4 +11,10 @@ final class HudBackground extends Drawable {
     @Override public void setAlpha(int alpha){paint.setAlpha(alpha);}
     @Override public void setColorFilter(ColorFilter filter){paint.setColorFilter(filter);}
     @Override public int getOpacity(){return PixelFormat.OPAQUE;}
+    static void style(android.widget.Button button) {
+        float density=button.getResources().getDisplayMetrics().density;
+        android.graphics.drawable.GradientDrawable shape=new android.graphics.drawable.GradientDrawable();shape.setColor(0xff0b1c26);shape.setCornerRadius(2*density);shape.setStroke(Math.max(1,(int)density),0xff265c67);
+        button.setBackground(new android.graphics.drawable.InsetDrawable(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0xff305e56),shape,null),(int)(3*density)));
+        button.setTextColor(0xff36f4e3);button.setTypeface(android.graphics.Typeface.MONOSPACE,android.graphics.Typeface.BOLD);button.setAutoSizeTextTypeUniformWithConfiguration(10,14,1,android.util.TypedValue.COMPLEX_UNIT_SP);
+    }
 }

@@ -44,6 +44,15 @@ public final class CoreTest {
         check(SignalMapModel.estimate(straight,"target")==null,"straight driving route is underconstrained");
         check(!new SignalMapModel.Point(Double.NaN,0,5,-40,"","",0,false).valid(),"invalid coordinate rejection");
         check(DetectorTags.classify("","",List.of("3100","0x3100"),Set.of(),false,false).confidence.equals("LOW"),"duplicate service IDs must not increase confidence");
+        OverlayProjection projection=OverlayProjection.calibrate(36,-115,100,200,36,-114.999,300,250);
+        double[] anchor=projection.screen(36,-114.999),middle=projection.screen(36,-114.9995);
+        check(Math.abs(anchor[0]-300)<.001&&Math.abs(anchor[1]-250)<.001,"aligned rotated second anchor");
+        check(Math.abs(middle[0]-200)<.001&&Math.abs(middle[1]-225)<.001,"Mercator midpoint projection");
+        boolean invalid=false;try{OverlayProjection.calibrate(36,-115,100,100,36,-115,300,300);}catch(IllegalArgumentException expected){invalid=true;}
+        check(invalid,"coincident landmarks rejected");
+        invalid=false;try{OverlayProjection.calibrate(36,-115,100,100,36,-114.999,120,120);}catch(IllegalArgumentException expected){invalid=true;}
+        check(invalid,"insufficient screen separation rejected");
+        check(!OverlayProjection.validGeo(Double.NaN,0)&&!OverlayProjection.validGeo(89,0),"unsupported map coordinates rejected");
         System.out.println(count + " core policy/export checks passed");
     }
 }

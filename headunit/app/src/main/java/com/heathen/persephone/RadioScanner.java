@@ -26,6 +26,8 @@ final class RadioScanner {
     private Location fix;
     private boolean running, registered;
     private int generation;
+    private String wifiState="Wi-Fi waiting for discovery";
+    String wifiStatus(){return wifiState;}
     private final LinkedHashMap<String, Long> wifiTimes = new LinkedHashMap<>(), bleTimes = new LinkedHashMap<>();
     RadioScanner(Context context, Sink sink) {
         this.context = context; this.sink = sink;
@@ -47,7 +49,7 @@ final class RadioScanner {
         public void onStatusChanged(String provider, int status, Bundle extras) {}
     };
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
-        public void onReceive(Context c, Intent intent) { if (running) readWifi(); }
+        public void onReceive(Context c, Intent intent) { if (running) {if(!intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED,true))sink.status("Wi-Fi scan did not update; Android may be throttling");readWifi();} }
     };
     private final ScanCallback callbacks = new ScanCallback() {
         @Override public void onScanResult(int type, android.bluetooth.le.ScanResult result) {
@@ -64,7 +66,8 @@ final class RadioScanner {
         running = true; generation++; wifiTimes.clear(); bleTimes.clear(); fix = null;
         try {
             IntentFilter filter = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
-            if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED) // Framework Wi-Fi can broadcast from a privileged non-system UID; payloads are never trusted.
+            ;
             else context.registerReceiver(receiver, filter);
             registered = true;
             readWifi();
@@ -93,22 +96,26 @@ final class RadioScanner {
     }
     boolean requestWifiScan() {
         if (!running || wifi == null) return false;
-        try { return wifi.startScan(); } catch (Exception e) { sink.status("Wi-Fi request rejected: " + e.getMessage()); return false; }
+        try { boolean accepted=wifi.startScan();wifiState=accepted?"Wi-Fi fresh scan requested; waiting for Android results":"Wi-Fi request rejected/throttled; no new scan claimed";sink.status(wifiState);return accepted; } catch (Exception e) { sink.status("Wi-Fi request rejected: " + e.getMessage()); return false; }
     }
     private void readWifi() {
-        if (wifi == null) { sink.status("Wi-Fi API unavailable"); return; }
+        if (wifi == null) { wifiState="Wi-Fi API unavailable";sink.status(wifiState); return; }
         try {
-            if (!wifi.isWifiEnabled()) sink.status("Wi-Fi switched off. Enable it in Android settings.");
-            for (android.net.wifi.ScanResult r : wifi.getScanResults()) {
+            if (!wifi.isWifiEnabled()){wifiState="Wi-Fi switched off. Enable it in Android settings.";sink.status(wifiState);return;}
+            if(locationManager!=null&&((Build.VERSION.SDK_INT>=28&&!locationManager.isLocationEnabled())||(Build.VERSION.SDK_INT<28&&!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)&&!locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)))){wifiState="Wi-Fi requires Android Location enabled, even with permission granted";sink.status(wifiState);return;}
+            List<android.net.wifi.ScanResult> results=wifi.getScanResults();int fresh=0,stale=0;
+            for (android.net.wifi.ScanResult r : results) {
                 long age = SystemClock.elapsedRealtime() - r.timestamp / 1000;
-                if (age < 0 || age > RfCore.FRESH_MS || Objects.equals(wifiTimes.get(r.BSSID), r.timestamp)) continue;
+                if(age<0||age>RfCore.FRESH_MS){stale++;continue;}fresh++;
+                if(Objects.equals(wifiTimes.get(r.BSSID),r.timestamp))continue;
                 wifiTimes.put(r.BSSID, r.timestamp); trim(wifiTimes);
                 JSONObject row = base("Wi-Fi", r.BSSID, r.SSID, r.level);
                 row.put("frequency", r.frequency).put("security", r.capabilities).put("scan_age_ms", age);
                 row.put("evidence", RfCore.evidence(r.BSSID, r.SSID, Collections.emptyList(), Collections.emptySet()));
                 addGps(row); sink.observation(row);
             }
-        } catch (SecurityException e) { sink.status("Precise location permission missing or revoked"); }
+            wifiState=fresh>0?"Wi-Fi: "+fresh+" fresh AP results (select Wi-Fi / All in Feed)":"Wi-Fi: no fresh scan results"+(stale>0?"; "+stale+" cached results are stale":"")+". Request a fresh scan below, or use the passive ESP32 receiver.";sink.status(wifiState);
+        } catch (SecurityException e) { wifiState="Wi-Fi precise location permission missing or revoked";sink.status(wifiState); }
         catch (Exception e) { sink.status("Wi-Fi needs precise location permission and Location enabled: " + e.getMessage()); }
     }
     private void readBle(android.bluetooth.le.ScanResult result) {

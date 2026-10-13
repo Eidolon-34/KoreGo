@@ -26,6 +26,17 @@ final class RadioScanner {
     private Location fix;
     private boolean running, registered;
     private int generation;
+    static final long WIFI_REFRESH_MS=30_000;
+    private boolean automaticWifi;
+    boolean automaticWifi(){return automaticWifi;}
+    private final Runnable wifiRefresh=new Runnable(){public void run(){
+        if(!running||!automaticWifi)return;
+        PinGate gate=new PinGate(context);if(!gate.unlocked()||gate.isDefault()){automaticWifi(false);sink.status("Wi-Fi refresh stopped: renew personal passcode approval");return;}
+        requestWifiScan();handler.postDelayed(this,WIFI_REFRESH_MS);
+    }};
+    void automaticWifi(boolean enable){handler.removeCallbacks(wifiRefresh);automaticWifi=enable&&running;
+        if(automaticWifi){PinGate gate=new PinGate(context);if(!gate.unlocked()||gate.isDefault()){automaticWifi=false;throw new SecurityException("Personal passcode approval required");}handler.post(wifiRefresh);}
+    }
     private String wifiState="Wi-Fi waiting for discovery";
     String wifiStatus(){return wifiState;}
     private final LinkedHashMap<String, Long> wifiTimes = new LinkedHashMap<>(), bleTimes = new LinkedHashMap<>();
@@ -89,7 +100,7 @@ final class RadioScanner {
         } catch (Exception e) { sink.status("GPS unavailable: " + e.getMessage()); }
     }
     void stop() {
-        running = false; generation++;
+        automaticWifi(false);running = false; generation++;
         if (registered) { context.unregisterReceiver(receiver); registered = false; }
         if (ble != null) { try { ble.stopScan(callbacks); } catch (SecurityException | IllegalStateException ignored) {} ble = null; }
         if (locationManager != null) { try { locationManager.removeUpdates(locations); } catch (SecurityException ignored) {} }

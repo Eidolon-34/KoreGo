@@ -57,7 +57,7 @@ public class OverlayTest {
         OverlayService.startApproved(context,false,false);Intent start=Shadows.shadowOf((android.app.Application)context).getNextStartedService();assertNotNull(start);
         ServiceController<OverlayService> controller=Robolectric.buildService(OverlayService.class).create();try{
             OverlayService service=controller.get();service.onStartCommand(start,0,1);assertTrue(OverlayService.active());
-            assertFalse((boolean)field(service,"live"));assertFalse((boolean)field(field(service,"scanner"),"running"));
+            assertFalse((boolean)field(service,"live"));assertNull(field(service,"map"));assertFalse((boolean)field(field(service,"scanner"),"running"));
             assertNotNull(Shadows.shadowOf(service).getLastForegroundNotification());
             new PinGate(context).lock();service.onStartCommand(new Intent().setAction(OverlayService.SHOW),0,2);assertTrue(Shadows.shadowOf(service).isStoppedBySelf());
         }finally{controller.destroy();}
@@ -72,6 +72,16 @@ public class OverlayTest {
         Shadows.shadowOf(wifi).setScanResults(Collections.singletonList(old));List<JSONObject> rows=new ArrayList<>();RadioScanner scanner=new RadioScanner(context,new RadioScanner.Sink(){public void observation(JSONObject row){rows.add(row);}public void status(String text){}});
         scanner.start();assertTrue(scanner.wifiStatus().contains("stale"));assertEquals(0,rows.size());
         old.timestamp=SystemClock.elapsedRealtime()*1000;context.sendBroadcast(new Intent(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION).putExtra(WifiManager.EXTRA_RESULTS_UPDATED,true));Shadows.shadowOf(Looper.getMainLooper()).idle();assertEquals(1,rows.size());assertTrue(scanner.wifiStatus().contains("1 fresh"));scanner.stop();
+    }
+    @Test @Config(sdk=35) public void periodicWifiRequestsThirtySecondsAndStopsWithLease()throws Exception {
+        PinGate gate=new PinGate(context);gate.set("123456",false);assertTrue(gate.verify("123456"));
+        WifiManager wifi=(WifiManager)context.getSystemService(Context.WIFI_SERVICE);wifi.setWifiEnabled(true);Shadows.shadowOf(wifi).setStartScanSucceeds(true);
+        List<String> messages=new ArrayList<>();List<JSONObject> observations=new ArrayList<>();RadioScanner scanner=new RadioScanner(context,new RadioScanner.Sink(){public void observation(JSONObject row){observations.add(row);}public void status(String text){messages.add(text);}});
+        scanner.start();messages.clear();scanner.automaticWifi(true);Shadows.shadowOf(Looper.getMainLooper()).idle();assertEquals(1,messages.stream().filter(x->x.startsWith("Wi-Fi fresh scan requested")).count());messages.clear();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(29));assertTrue(messages.isEmpty());
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));assertEquals(1,messages.size());messages.clear();
+        Shadows.shadowOf(wifi).setStartScanSucceeds(false);Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30));assertTrue(messages.get(0).contains("throttled"));assertTrue(observations.isEmpty());messages.clear();
+        gate.lock();Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30));assertFalse(scanner.automaticWifi());assertTrue(messages.get(0).contains("stopped"));messages.clear();Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2));assertTrue(messages.isEmpty());scanner.stop();
     }
     private static Object field(Object value,String name)throws Exception{java.lang.reflect.Field f=value.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(value);}
 }

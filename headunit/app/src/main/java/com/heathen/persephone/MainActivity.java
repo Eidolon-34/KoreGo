@@ -123,7 +123,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         actions.addView(button("Demo", () -> { if (running) stopSession(false); authenticate("Start a simulated session", () -> startSession(true)); }), new LinearLayout.LayoutParams(0, dp(58), 1));
         content.addView(actions);
         LinearLayout radios = row();
-        radios.addView(button("Request fresh Wi-Fi scan…", this::wifiConsent), new LinearLayout.LayoutParams(0, dp(56), 1));
+        radios.addView(button(scanner.automaticWifi()?"Stop 30s Wi-Fi refresh":"Wi-Fi refresh / scan…", this::wifiConsent), new LinearLayout.LayoutParams(0, dp(56), 1));
         radios.addView(button("Passive USB receiver…", () -> authenticate("Approve passive USB receiver", this::attachUsb)), new LinearLayout.LayoutParams(0, dp(56), 1));
         content.addView(radios);
         if(running&&!demo)note(scanner.wifiStatus());
@@ -132,7 +132,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         if (gate.isDefault()) note("Initial passcode: 9818. Change it in System before connected training. A successful unlock lasts one hour. Connected actions still need informed-consent confirmation.");
     }
     private void signals() {
-        if(running&&!demo){note(scanner.wifiStatus());content.addView(button("Request fresh Wi-Fi scan…",this::wifiConsent));}
+        if(running&&!demo){note(scanner.wifiStatus());content.addView(button(scanner.automaticWifi()?"Stop 30s Wi-Fi refresh":"Wi-Fi refresh / scan…",this::wifiConsent));}
         LinearLayout choices = row();
         for (String value : new String[]{"Priority", "Wi-Fi", "BLE", "All"}) choices.addView(button(value, () -> { filter = value; dirty = true; render(); }), new LinearLayout.LayoutParams(0, dp(50), 1));
         content.addView(choices);
@@ -209,14 +209,16 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     @android.annotation.SuppressLint("SetTextI18n")
     private void overlaySetup() {
         if(!Settings.canDrawOverlays(this)){message("Allow drawing over other apps","The overlay is built. Grant Android's display-over-other-apps permission in System, then return to MAP and start the overlay.");startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));return;}
-        LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),dp(8));box.addView(text("Colored reception pings float above Maps. Mini-map uses its own projection; DOTS mode needs two manually aligned landmarks on a flat, static map and pauses after outside touches / 30 seconds. No Maps camera-state API is assumed.",14,TEXT));
+        LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),dp(8));box.addView(text("Colored reception pings float above Maps. Only a compact legend, transparent dots, RSSI, and coordinates float above your map. Dots need two manually aligned landmarks on a flat, static map and pauses after outside touches / 30 seconds. No Maps camera-state API is assumed.",14,TEXT));
         CheckBox scan=new CheckBox(this);scan.setText("Continue Android discovery + GPS while Maps is visible");scan.setTextColor(TEXT);scan.setChecked(false);scan.setEnabled(!demo);box.addView(scan);
+        CheckBox refresh=new CheckBox(this);refresh.setText("Refresh Wi-Fi every 30 seconds during overlay discovery");refresh.setTextColor(TEXT);refresh.setChecked(!demo&&!gate.isDefault());refresh.setEnabled(!demo&&!gate.isDefault());box.addView(refresh);
+        box.addView(text("Periodic standard scans can transmit ordinary probes; approve only in your authorized training area. Android may throttle background scans.",13,TEXT));
         if(demo)box.addView(text("DEMO overlay: synthetic pings; no radios will start",14,AMBER));
         new AlertDialog.Builder(this).setTitle("Maps overlay / foreground service").setView(box).setPositiveButton("Start approved overlay",(d,w)->{
             if(!gate.unlocked()){authenticate("Renew overlay approval",this::overlaySetup);return;}
             if(scan.isChecked()&&checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED){message("Location permission required","Grant precise Location in System, then approve the overlay again.");return;}
             if(Build.VERSION.SDK_INT>=33&&!notificationsAsked&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){notificationsAsked=true;requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},40);message("Return after notification setup","Approve the overlay again after choosing your notification preference.");return;}
-            stopSession(false);try{OverlayService.startApproved(this,scan.isChecked(),demo);status("Overlay approved. Open your Maps app; use floating DOTS for calibration.");}catch(Exception e){status("Overlay unavailable: "+e.getMessage());}
+            stopSession(false);try{OverlayService.startApproved(this,scan.isChecked(),demo,scan.isChecked()&&refresh.isChecked());status("Overlay approved. Open your Maps app; use floating ALIGN for calibration.");}catch(Exception e){status("Overlay unavailable: "+e.getMessage());}
         }).setNegativeButton("Cancel",null).show();
     }
     private void sessions() {
@@ -255,7 +257,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         content.addView(button("Use private storage", () -> authenticate("Change destination", () -> { tree = null; prefs.edit().remove("tree").apply(); status("Private recording storage selected"); })));
         note("No upload service, exported scanner, BLE writes, or arbitrary firmware commands. App-only discovery stops on exit. Explicitly approved Maps-overlay discovery uses a foreground notification until Stop, lock expiry, or task removal. Connected testing stops on exit. Sessions remain in private storage until explicitly deleted.");
         note("The USB adapter supports direct ESP32-S3 CDC-ACM with the bundled passive firmware. CP210x/CH340 bridges are not supported. Built-in Android radios cannot expose raw 802.11 frames, monitor mode, or all client-only devices. Flock signature matches are hypotheses that can be spoofed; missed detections are possible.");
-        note("Persephone RF 0.3 · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
+        note("Persephone RF 0.4 · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
     }
     private void authenticate(String reason, Runnable action) {
         if (!visible) return;
@@ -293,13 +295,21 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
                 catch (Exception e) { ui.post(() -> { dialog.getButton(-1).setEnabled(true); second.setError(e.getMessage()); }); } });
         })); dialog.show();
     }
+    @android.annotation.SuppressLint("SetTextI18n")
     private void requestDiscovery() {
         List<String> permissions = new ArrayList<>(Arrays.asList(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION));
         if (Build.VERSION.SDK_INT >= 31) { permissions.add(Manifest.permission.BLUETOOTH_SCAN); permissions.add(Manifest.permission.BLUETOOTH_CONNECT); }
         List<String> missing = new ArrayList<>(); for (String p : permissions) if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) missing.add(p);
         if (!missing.isEmpty() && !permissionsAsked) { permissionsAsked = true; requestPermissions(missing.toArray(new String[0]), 7); return; }
-        startSession(false);
+        LinearLayout box=column();box.setPadding(dp(18),dp(8),dp(18),dp(8));
+        CheckBox refresh=new CheckBox(this);refresh.setText("Refresh Wi-Fi every 30 seconds");refresh.setTextColor(TEXT);refresh.setChecked(!gate.isDefault()&&prefs.getBoolean("wifiAutomatic",true));refresh.setEnabled(!gate.isDefault());box.addView(refresh);
+        box.addView(text("Standard scans may send ordinary probes in your scan area. Approve only in your authorized training setting. Android can throttle scans, especially while Maps is foreground. Refresh stops with this session or unlock expiry."+(gate.isDefault()?" Set a personal passcode in System to enable automatic Wi-Fi.":""),14,TEXT));
+        new AlertDialog.Builder(this).setTitle("Approve discovery / Wi-Fi refresh").setView(box).setPositiveButton("Start approved session",(dialog,which)->{
+            if(!gate.unlocked()){authenticate("Renew discovery approval",this::requestDiscovery);return;}
+            automaticWifiForSession=refresh.isChecked();prefs.edit().putBoolean("wifiAutomatic",automaticWifiForSession).apply();startSession(false);
+        }).setNegativeButton("Cancel",null).show();
     }
+    private boolean automaticWifiForSession;
     @Override public void onRequestPermissionsResult(int request, String[] names, int[] grants) {
         super.onRequestPermissionsResult(request, names, grants);
         if (request == 7) { status("Permissions updated. Start discovery to approve a session; missing capabilities are listed in System."); diagnostics(); }
@@ -312,7 +322,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         running = true; demo = simulated; replay = false; events = 0; live.clear(); mapPoints.clear(); smoothed.clear(); trace.clear(); track = "";
         status = simulated ? "Demo recording · synthetic data only" : "Recording · Wi-Fi result listener + BLE discovery";
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        if (!simulated) scanner.start(); dirty = true; render();
+        if (!simulated){scanner.start();if(automaticWifiForSession)audited("wifi_refresh_30s","local scan area","Operator approved periodic standard scans for this session",()->scanner.automaticWifi(true));} dirty = true; render();
     }
     private void stopSession(boolean leaving) {
         if (!running) return;
@@ -340,13 +350,14 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     }
     @Override public void status(String message) { status = message; dirty = true; if (statusLine != null) statusLine.setText(message); }
     private void wifiConsent() {
+        if(scanner.automaticWifi()){scanner.automaticWifi(false);status("Automatic Wi-Fi refresh stopped");return;}
         if (!running || demo) { message("Start discovery first", "A real Android discovery session is required."); return; }
         if (gate.isDefault()) { message("Change passcode first", "Set a personal passcode in System before requesting radio transmissions."); return; }
         new AlertDialog.Builder(this).setTitle("Request a standard Wi-Fi scan?")
             .setMessage("Android may transmit ordinary probe requests. This affects the radio's scan area and cannot be restricted to one AP. Use only within your authorized training setting. Android may throttle this request.")
-            .setPositiveButton("Authorize with passcode", (d, w) -> authenticate("Approve one Wi-Fi scan", () -> audited("wifi_scan", "local scan area", "Operator confirmed authorized training setting", () -> {
+            .setNeutralButton("One scan", (d, w) -> authenticate("Approve one Wi-Fi scan", () -> audited("wifi_scan", "local scan area", "Operator confirmed authorized training setting", () -> {
                 status(scanner.requestWifiScan() ? "Wi-Fi scan requested; waiting for Android results" : "Wi-Fi scan rejected / throttled. No new results claimed.");
-            }))).setNegativeButton("Cancel", null).show();
+            }))).setPositiveButton("Every 30 seconds",(d,w)->authenticate("Approve periodic Wi-Fi scans",()->audited("wifi_refresh_30s","local scan area","Operator approved standard scans every 30 seconds until session end or unlock expiry",()->{scanner.automaticWifi(true);status("Wi-Fi refresh approved every 30 seconds; Android may throttle");}))).setNegativeButton("Cancel", null).show();
     }
     private void labConsent(JSONObject row) {
         if (!running || demo || replay || !row.optBoolean("connectable")) { message("Training action unavailable", "Use a current, connectable BLE device during a real discovery session."); return; }

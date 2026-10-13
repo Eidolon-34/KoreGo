@@ -2,14 +2,14 @@
 
 A small native Android app for local RF discovery and consent-based training. It lives beside the existing OUI-SPY Flutter companion and uses a separate package (`com.heathen.persephone`). The original companion/firmware are not dependencies of this APK.
 
-## What works in this build
+## What works in this build (0.2)
 
 - Android Wi-Fi **result listening** and BLE advertisement discovery without an ESP32.
 - Optional **passive ESP32-S3 over direct USB CDC-ACM**, with bundled receive-only firmware. This adds received Wi-Fi beacons and client probe-request metadata, including devices that do not expose an AP.
-- Landscape dashboard, large controls, Wi-Fi/BLE/watchlist filters, evidence detail, smoothed RSSI trace, and stale-signal indicators.
-- Local JSONL recordings, complete CSV exports, offline session replay, and a clearly labeled synthetic demo mode.
-- Persistent Android folder selector: choose a writable SD-card folder, USB-storage folder, or another document provider. Completed sessions automatically copy there as JSONL and CSV. Private recovery copies remain if the card is missing/full.
-- Receiver GPS coordinates only when a fix has accuracy and is at most ten seconds old. No invented transmitter coordinates or RSSI-to-distance estimates.
+- Cyberpunk HUD (cyan/yellow/magenta, monospace, grid and instrument styling), portrait/landscape layouts, large controls, Wi-Fi/BLE/watchlist filters, evidence detail, smoothed RSSI trace, and stale-signal indicators.
+- Local JSONL recordings, complete CSV and GeoJSON exports, offline session replay, and a clearly labeled synthetic demo mode.
+- Persistent Android folder selector: choose a writable SD-card folder, USB-storage folder, or another document provider. Completed sessions automatically copy there as JSONL, CSV, and GeoJSON. Private recovery copies remain if the card is missing/full.
+- Receiver GPS coordinates only from fresh, accurate fixes. Mocked GPS is excluded from mapping. Wi-Fi samples older than five seconds do not receive GPS tags, and motion/timing uncertainty expands recorded accuracy. A native interactive map draws receiver observations and a route. A gated RSSI propagation fit can show a tentative search area; no measured transmitter position is claimed.
 - Pwnagotchi-inspired companion expressions and observation epochs, without handshake collection, deauthentication, or password attacks.
 - Passcode approval before starting discovery, selecting storage, exporting/deleting/replaying data, changing settings, requesting Wi-Fi scans, and performing a connected training action.
 - A single connected training action: **GATT service UUID / characteristic-property inventory** of an explicitly approved, freshly observed BLE target. No characteristic reads or writes. Wi-Fi capability review is offline.
@@ -25,10 +25,10 @@ adb install -r persephone-rf-debug.apk
 ```
 
 1. Open **Persephone RF**. Initial passcode: **9818**.
-2. Settings → Change passcode → approve with `9818` → enter a personal 6–12 digit passcode twice. Connected inventory and explicit Wi-Fi scan requests are blocked while the initial passcode is still in use.
+2. System → Change passcode → approve with `9818` → enter a personal 6–12 digit passcode twice. Connected inventory and explicit Wi-Fi scan requests are blocked while the initial passcode is still in use.
 3. Enable Wi-Fi, Bluetooth, and Android Location. Grant precise location and, on Android 12+, nearby Bluetooth permissions.
-4. Sessions → Choose save folder / SD card → select a writable **folder** on the card. Android 11+ can prohibit selecting storage roots; choose a subfolder such as `Persephone`.
-5. Overview → Start discovery → approve. If permissions are requested, return and press Start again to approve the actual session. After a permission denial, the next approved session can run with the remaining capabilities. Settings has permission setup and diagnostics controls.
+4. Logs → Choose save folder / SD card → select a writable **folder** on the card. Android 11+ can prohibit selecting storage roots; choose a subfolder such as `Persephone`.
+5. HUD → Start discovery → approve. If permissions are requested, return and press Start again to approve the actual session. After a permission denial, the next approved session can run with the remaining capabilities. System has permission setup and diagnostics controls.
 6. Stop & save finalizes the private recording and copies it to the selected folder. Leaving the app also stops/finalizes recording. Selecting a folder does not resume scanning.
 
 The debug signing key varies by build machine. An update built with a different key will not install over the existing APK. Export recordings before replacing an installation; production signing is intentionally not configured here.
@@ -39,7 +39,7 @@ The debug signing key varies by build machine. An update built with a different 
 
 An Android application cannot put an arbitrary head-unit chipset into monitor mode through these APIs, read all 802.11 frames, detect all client-only devices, or guarantee that a vendor's Bluetooth audio chip supports Android BLE. GPS and USB-host availability also vary. No raw PCAP, Remote ID decoder, classic Bluetooth/SDP inventory, firmware OTA, or OUI-SPY BLE command integration is claimed in this edition.
 
-The ESP32 firmware is different: Wi-Fi `WIFI_MODE_NULL` + promiscuous management-frame receive, channels 1–11, and **passive** BLE scanning. It never starts an AP/station scan, associates, sends probes, advertises, connects to BLE targets, or injects frames. It collects only metadata, not traffic payloads or handshakes. Directed probe-request SSIDs are omitted. Wi-Fi security from this receiver is only `[OPEN]` / `[PRIVACY]`, not a complete WPA decoder. The first advertised BLE service and manufacturer company ID are recorded; absent identifiers are not inferred.
+The ESP32 firmware is different: Wi-Fi `WIFI_MODE_NULL` + promiscuous management-frame receive, channels 1–11, and **passive** BLE scanning. It never starts an AP/station scan, associates, sends probes, advertises, connects to BLE targets, or injects frames. It collects only metadata, not traffic payloads or handshakes. Directed probe-request SSIDs are omitted. Wi-Fi security from this receiver is only `[OPEN]` / `[PRIVACY]`, not a complete WPA decoder. Up to four advertised BLE services and the manufacturer company ID are recorded; absent identifiers are not inferred.
 
 Name, service, and manufacturer evidence are shown as **unverified signatures**, not proof of ownership/device type. The app uses a small explainable signature set rather than broadly labeling common chip vendors as surveillance. Spoofing, randomized addresses, radio coverage, hidden APs, changing firmware, and missing advertisements can create false positives or missed detections. Watchlist matching is case-insensitive substring matching over names, addresses, evidence, and advertised service UUIDs.
 
@@ -49,7 +49,7 @@ Name, service, and manufacturer evidence are shown as **unverified signatures**,
 - Five failed attempts impose a persisted 60-second cooldown. Every connected action requires its own passcode approval, an owner/consent reference, and an explicit ownership/informed-consent checkbox.
 - The exact target must be a connectable BLE address observed within 30 seconds, during a real native discovery session. Demo/replay/USB observations cannot start connected training.
 - The approval audit must persist before radio actions run. Inventory closes after completion, failure, app exit, or 15 seconds. It never reads/writes characteristic values.
-- App backup/device-transfer are excluded; the only exported Android component is the launcher Activity. There is no Internet permission or upload service. The original upstream companion's robot exploitation controls and firmware commands are not reachable from this APK.
+- App backup/device-transfer are excluded; the only exported Android component is the launcher Activity. There is no upload service. Internet permission exists solely for an explicitly approved street basemap; it is disabled by default and whenever the app leaves the foreground. The original upstream companion's robot exploitation controls and firmware commands are not reachable from this APK.
 - The public initial PIN is a setup value, **not theft protection**. Change it. An app PIN cannot defend against root access, reflashing/uninstalling/clearing app data, changing the system clock, or extracting an unlocked SD card. SD exports are plaintext training data; private files use Android's app sandbox. UI screenshots are blocked on-device.
 - Operators enter consent references themselves; the app does not independently verify a volunteer's identity or consent. Use connected training while parked, with a dedicated owned/volunteer device. A passenger can operate discovery during a driving demonstration.
 
@@ -70,7 +70,7 @@ The checked-in Gradle wrapper pins Gradle 8.9 with a distribution checksum. Prod
 Outputs:
 
 - `app/build/outputs/apk/debug/app-debug.apk`
-- `app/build/previews/landscape-0.png` through `landscape-3.png` (native Android 15 software renders, 960×480)
+- `app/build/previews/landscape-0.png` through `landscape-4.png` (native Android 15 software renders, 960×480)
 - `receiver/.pio/build/passive_xiao_s3/firmware.bin`
 - `receiver/.pio/build/passive_s3_devkit/firmware.bin`
 
@@ -116,3 +116,33 @@ Firmware queue: 64 metadata events. USB/Android deduplicate observations to at m
 - [flock-you](https://github.com/colonelpanichacks/flock-you): provenance for the small name/service/manufacturer signature set (`Flock`, `Penguin-`, `FS Ext Battery`, `B4:1E:52`, accessory UUID, Raven services, XUNTONG `0x09C8`). These public identifiers are hypotheses, not validated device identities.
 - [Pwnagotchi](https://github.com/evilsocket/pwnagotchi): inspiration for companion moods/epochs only; no code or offensive capture features imported.
 - [Android Wi-Fi scanning](https://developer.android.com/develop/connectivity/wifi/wifi-scan), [Bluetooth permissions](https://developer.android.com/develop/connectivity/bluetooth/bt-permissions), [storage access framework](https://developer.android.com/training/data-storage/shared/documents-files).
+
+## Priority surveillance tags and provenance
+
+The default feed prioritizes detector candidates, then RSSI. **All** shows ordinary signals. Flock, Raven, Falcon/LPR, battery/accessory, and camera-vendor tags carry `confidence`, `ruleset`, `rule_ids`, and a readable evidence trail in JSONL/CSV exports and detail panels. Counts refer to candidates in the bounded live window, never confirmed installed cameras.
+
+- **FLOCK**: bounded Flock-name patterns, direct `B4:1E:52` vendor evidence, and shared-prefix + received wildcard-probe evidence. Prefix + wildcard + ordered community IE fingerprint receives `CORROBORATED`, which still means an unverified candidate. The passive receiver checks the ordered TLVs/vendor bytes without retaining packet payloads.
+- **RAVEN / AUDIO SENSOR**: bounded Raven-name hints or advertised custom services `3100`–`3500`. Two distinct custom services raise evidence to `MEDIUM`. Generic Device Information (`180A`), Health Thermometer (`1809`), Location/Navigation (`1819`), and Nordic UART **never** identify Raven by themselves. Aliases/duplicate service UUIDs do not increase confidence.
+- **FALCON / LPR**: an explicit Falcon name is a **LOW** model hint. The referenced repositories do not prove a unique Falcon fingerprint; a generic Flock observation is not automatically labeled Falcon. Devices can use or spoof that name. A battery/OUI is not proof of an LPR camera.
+- **Other cameras/LPRs**: bounded camera-vendor names (Hikvision, Dahua, Axis, Reolink, Wyze, Ring, Eufy), Pigvision/Condor/Sparrow hints, and explicit LPR/ALPR names are candidates. This cannot discover silent/cellular-only/wired cameras or universally classify every camera from RF.
+- Broad community OUIs and XUNTONG `09C8` alone produce **SHARED HARDWARE / LOW**, below camera-family candidates. Common chips are not treated as proof of surveillance.
+
+Reviewed public signature provenance (no third-party detector source copied):
+
+| Repository | Reviewed revision | Contributions |
+|---|---|---|
+| [NSM-Barii/flock-back](https://github.com/NSM-Barii/flock-back) | `011e024e0fc0c06567f44ababfa7c957ac8b6b4e` | names, shared prefixes, custom Raven services; deliberately exclude generic service false positives |
+| [Marslauncher/flock-you-scanner](https://github.com/Marslauncher/flock-you-scanner) | `fc02f45f6725ab9b9342a6edc7a4752289ba633b` | name and shared-hardware evidence |
+| [yetisoldier/CYD-Flock-You](https://github.com/yetisoldier/CYD-Flock-You) | `6d68f748154799647bebff80c4af6edb211c4c73` | OUI facts, wildcard and ordered IE signature bytes, passive metadata approach |
+
+Public identifier values and ordered IE facts are implemented in a new bounded matcher. Source claims are not independent field validation. Vendor product categories: [Flock Falcon/Raven descriptions](https://www.flocksafety.com/blog/product-announcement-q2-2023).
+
+## Map interpretation and privacy
+
+**MAP** works locally without street tiles. Cyan marks Flock-family candidates, magenta Raven, yellow Falcon/LPR, and muted blue ordinary/shared-hardware observations. Tap a receiver point to select a signal; drag, pinch, use ±, or Center. The selected strongest reception point is explicitly **STRONGEST RX**, with receiver accuracy, not a camera location. GeoJSON exports contain longitude/latitude receiver geometries and `position_role=receiver_observation`, with evidence/source properties. Synthetic recordings remain labeled `DEMO`.
+
+A dashed orange **MODEL SEARCH AREA** is shown only for an eligible selected stationary-source hypothesis: at least eight distinct accurate fixes (≤25 m), at least 60 m of two-dimensional spatial coverage, variable RSSI, a bounded low-residual fit, and a 15-minute sample window. The algorithm fits an unknown RSSI intercept and a constrained path-loss exponent over candidate positions. Collinear routes, insufficient variation, mixed demo/real data, poor GPS, out-of-bounds/ambiguous fits, and mocked coordinates yield **origin unresolved**. The footprint is a model search region with a 25 m floor, **not** a confidence interval, bearing measurement, or triangulated transmitter coordinate. Reflections, buildings, moving transmitters, antennas, and RSSI calibration can invalidate the model. Controlled synthetic tests establish algorithm behavior, not real-world location accuracy.
+
+**Enable street tiles…** explains privacy and requires the passcode. OSM receives the IP and requested viewport/tile area; no names, MACs, tags, or recordings are uploaded. Requests use HTTPS, an application User-Agent, visible attribution, and a 32 MiB HTTP cache honoring server headers. Only visible tiles are requested; there is no bulk/offline-area download. Disabled tiles and missing Internet leave the local overlay usable. Network enablement expires on foreground exit. [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/).
+
+Use the Nothing Phone 3 for mobile GPS/radio testing; the HiBy R4 install/launch test is also supported. Outdoor precise-location fixes are needed for a meaningful receiver route. Installing/launching is not equivalent to live RF, map-source, SD, or external-receiver qualification. The currently connected Nothing device is Android 16 / API 36; the R4 is Android 12 / API 31. Both use the same app ID/debug signing key, so updates preserve the private passcode and recordings.

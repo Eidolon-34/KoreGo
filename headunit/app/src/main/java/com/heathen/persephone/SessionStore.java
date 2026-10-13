@@ -4,6 +4,7 @@ import android.content.Context;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 import org.json.JSONObject;
+import org.json.JSONException;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -51,7 +52,7 @@ final class SessionStore {
     }
     void export(File source, Uri tree) throws Exception {
         Uri parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
-        Uri json = null, csv = null;
+        Uri json = null, csv = null, geo = null;
         try {
             json = DocumentsContract.createDocument(context.getContentResolver(), parent, "application/x-ndjson", source.getName());
             if (json == null) throw new IOException("Provider could not create JSONL");
@@ -71,7 +72,7 @@ final class SessionStore {
                 while ((line = in.readLine()) != null) {
                     JSONObject row;
                     try { row = new JSONObject(line); } catch (Exception truncatedTail) { continue; }
-                    String[] keys = {"source", "time", "radio", "address", "name", "rssi", "frequency", "security", "evidence", "latitude", "longitude", "accuracy", "gps_age_ms"};
+                    String[] keys = {"source", "time", "radio", "address", "name", "rssi", "frequency", "security", "evidence", "latitude", "longitude", "accuracy", "gps_age_ms", "tags", "confidence", "ruleset", "rule_ids"};
                     for (int i = 0; i < keys.length; i++) {
                         if (i > 0) out.write(',');
                         // Numeric fields are emitted numerically; text fields use formula-safe quoting.
@@ -82,8 +83,20 @@ final class SessionStore {
                 }
                 out.flush();
             }
+            geo=DocumentsContract.createDocument(context.getContentResolver(),parent,"application/geo+json",source.getName().replace(".jsonl",".geojson"));
+            if(geo==null)throw new IOException("Provider could not create GeoJSON");
+            try(BufferedReader in=new BufferedReader(new InputStreamReader(new FileInputStream(source),StandardCharsets.UTF_8));OutputStream stream=context.getContentResolver().openOutputStream(geo,"wt")) {
+                if(stream==null)throw new IOException("Provider could not open GeoJSON");
+                BufferedWriter out=new BufferedWriter(new OutputStreamWriter(stream,StandardCharsets.UTF_8));out.write("{\"type\":\"FeatureCollection\",\"features\":[");boolean first=true;String line;
+                while((line=in.readLine())!=null){JSONObject row;try{row=new JSONObject(line);}catch(JSONException tail){continue;}SignalMapModel.Point point=DetectionAnnotator.point(row);if(point==null)continue;
+                    JSONObject properties=new JSONObject(row.toString()).put("position_role","receiver_observation");
+                    JSONObject feature=new JSONObject().put("type","Feature").put("geometry",new JSONObject().put("type","Point").put("coordinates",new org.json.JSONArray().put(point.lon).put(point.lat))).put("properties",properties);
+                    if(!first)out.write(',');first=false;out.write(feature.toString());
+                }
+                out.write("]}");out.flush();
+            }
         } catch (Exception error) {
-            for (Uri uri : new Uri[]{json, csv}) if (uri != null) {
+            for (Uri uri : new Uri[]{json, csv, geo}) if (uri != null) {
                 try { DocumentsContract.deleteDocument(context.getContentResolver(), uri); } catch (Exception ignored) {}
             }
             throw error;

@@ -44,7 +44,7 @@ public class HeadunitTest {
         info.readPermission = "android.permission.MANAGE_DOCUMENTS"; info.writePermission = "android.permission.MANAGE_DOCUMENTS";
         provider.attachInfo(context, info); ShadowContentResolver.registerProviderInternal(info.authority, provider);
         SessionStore store = new SessionStore(context); SessionStore.Session session = store.new Session(false);
-        for (int i = 0; i < 600; i++) session.append(new JSONObject().put("source", "ANDROID").put("time", "2026-10-13T13:00:00Z").put("radio", "Wi-Fi").put("address", "AA:BB:CC:00:00:01").put("name", "=sample,\"SSID\"").put("rssi", -70));
+        for (int i = 0; i < 600; i++) session.append(new JSONObject().put("source", "ANDROID").put("time", "2026-10-13T13:00:00Z").put("radio", "Wi-Fi").put("address", "AA:BB:CC:00:00:01").put("name", "=sample,\"SSID\"").put("rssi", -70).put("latitude",36.1).put("longitude",-115.2).put("accuracy",5));
         session.close();
         Uri tree = DocumentsContract.buildTreeDocumentUri(info.authority, "root"); store.export(session.file, tree);
         File csv = Arrays.stream(provider.root.listFiles()).filter(f -> f.getName().endsWith(".csv")).findFirst().get();
@@ -52,6 +52,8 @@ public class HeadunitTest {
         assertEquals(601, data.lines().count()); assertTrue(data.contains("\"'=sample,\"\"SSID\"\"\"")); assertTrue(data.contains(",-70,"));
         File json = Arrays.stream(provider.root.listFiles()).filter(f -> f.getName().endsWith(".jsonl")).findFirst().get();
         assertArrayEquals(Files.readAllBytes(session.file.toPath()), Files.readAllBytes(json.toPath()));
+        File geo=Arrays.stream(provider.root.listFiles()).filter(f->f.getName().endsWith(".geojson")).findFirst().get();
+        JSONArray features=new JSONObject(new String(Files.readAllBytes(geo.toPath()),java.nio.charset.StandardCharsets.UTF_8)).getJSONArray("features");assertEquals(600,features.length());assertEquals(-115.2,features.getJSONObject(0).getJSONObject("geometry").getJSONArray("coordinates").getDouble(0),.00001);assertEquals("receiver_observation",features.getJSONObject(0).getJSONObject("properties").getString("position_role"));
         provider.failCsv = true;
         try { store.export(session.file, tree); fail("removed / full media must fail"); } catch (Exception expected) { assertTrue(session.file.exists()); }
         assertEquals(1, provider.deleted);

@@ -82,7 +82,7 @@ final class UsbReceiver {
                             JSONObject observation = new JSONObject().put("radio", row.optString("radio")).put("address", row.optString("address"))
                                 .put("name", row.optString("name")).put("rssi", row.optInt("rssi")).put("frequency", row.optInt("frequency"))
                                 .put("security", row.optString("security")).put("services", new JSONArray(services)).put("manufacturer_ids", new JSONArray(manufacturers))
-                                .put("connectable", false);
+                                .put("connectable", false).put("wildcard_probe",row.optBoolean("wildcard_probe")).put("ie_fingerprint",row.optBoolean("ie_fingerprint"));
                             observation.put("schema", 1).put("source", "ESP32_USB").put("time", Instant.now().toString()).put("seen_elapsed", SystemClock.elapsedRealtime());
                             observation.put("evidence", RfCore.evidence(observation.optString("address"), observation.optString("name"), services, manufacturers));
                             ui.post(() -> { if (active && epoch == generation) sink.row(observation); });

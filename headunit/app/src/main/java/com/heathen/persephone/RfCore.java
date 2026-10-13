@@ -11,7 +11,7 @@ public final class RfCore {
     private RfCore() {}
     public static final int MAX_LIVE = 512;
     public static final long FRESH_MS = 30_000;
-    public static final String CSV_HEADER = "source,observed_at_utc,radio,address,name,rssi_dbm,frequency_mhz,security,evidence,receiver_latitude,receiver_longitude,receiver_accuracy_m,gps_age_ms\n";
+    public static final String CSV_HEADER = "source,observed_at_utc,radio,address,name,rssi_dbm,frequency_mhz,security,evidence,receiver_latitude,receiver_longitude,receiver_accuracy_m,gps_age_ms,tags,confidence,ruleset,rule_ids\n";
     public static String csv(String value) {
         if (value == null) value = "";
         // Neutralize formulas even when SSIDs contain leading whitespace/control chars.
@@ -21,22 +21,9 @@ public final class RfCore {
     }
     public static boolean validMac(String mac) { return mac != null && mac.matches("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}"); }
     public static String evidence(String address, String name, Collection<String> services, Set<Integer> manufacturers) {
-        List<String> evidence = new ArrayList<>();
-        String lower = name.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("flock") || lower.startsWith("penguin-") || lower.equals("fs ext battery"))
-            evidence.add("name resembles community Flock signature; unverified");
-        if (validMac(address) && address.toUpperCase(Locale.ROOT).startsWith("B4:1E:52:"))
-            evidence.add("Flock vendor prefix; does not establish device type");
-        if (manufacturers.contains(0x09c8)) evidence.add("XUNTONG manufacturer ID; shared vendor, weak evidence");
-        for (String service : services) {
-            String s = service.toLowerCase(Locale.ROOT);
-            if (s.startsWith("0x")) s = s.substring(2);
-            if (s.matches("[0-9a-f]{4}")) s = "0000" + s + "-0000-1000-8000-00805f9b34fb";
-            if (s.equals("e8ccbb38-9532-46a8-9fe5-1814df172e6f")) evidence.add("community Flock accessory service; unverified");
-            if (s.matches("00003[1-5]00-0000-1000-8000-00805f9b34fb")) evidence.add("community Raven service; unverified");
-        }
-        return String.join("; ", evidence);
+        return String.join("; ", DetectorTags.classify(address, name, services, manufacturers, false, false).reasons);
     }
+
     public static boolean matches(String watchlist, String address, String name, String evidence, Collection<String> services) {
         String haystack = (address + " " + name + " " + evidence + " " + String.join(" ", services)).toLowerCase(Locale.ROOT);
         for (String token : watchlist.split(",")) {

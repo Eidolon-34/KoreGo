@@ -271,4 +271,4 @@ Security-research and privacy-auditing tool. Detecting surveillance hardware in 
 
 ## Android car-radio edition
 
-[Persephone RF](headunit/README.md) is a separate native Android training app with built-in Wi-Fi/BLE discovery, SD-folder exports, RSSI tracking, offline demo/replay, and passcode-approved read-only BLE inventory. A bundled passive ESP32-S3 USB receiver extends coverage. Radio/pager hardware qualification is still required; see its installation guide and acceptance checks.
+[Persephone RF](headunit/README.md) is a separate native Android training app with a cyberpunk phone/head-unit HUD, built-in Wi-Fi/BLE discovery, priority Flock/Raven/Falcon-LPR candidate tagging, GPS receiver-map overlays, tentative RSSI search areas, SD-folder JSONL/CSV/GeoJSON exports, offline demo/replay, and passcode-approved read-only BLE inventory. A bundled passive ESP32-S3 USB receiver adds wildcard/ordered-IE probe evidence. Nothing Phone and HiBy R4 installation/launch are verified; live radio/pager hardware qualification remains required. See the guide for evidence limits and acceptance checks.

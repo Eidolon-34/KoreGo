@@ -36,7 +36,12 @@ final class RadioScanner {
     }
     BluetoothAdapter adapter() { return adapter; }
     private final LocationListener locations = new LocationListener() {
-        public void onLocationChanged(Location value) { fix = value; }
+        public void onLocationChanged(Location value) {
+            if(!value.hasAccuracy()||!Float.isFinite(value.getAccuracy())||value.getAccuracy()<=0)return;
+            long now=SystemClock.elapsedRealtime();
+            if(fix!=null&&now-fix.getElapsedRealtimeNanos()/1_000_000<=5000&&value.getAccuracy()>fix.getAccuracy()*1.3f)return;
+            fix=value;
+        }
         public void onProviderEnabled(String provider) {}
         public void onProviderDisabled(String provider) { sink.status("Location provider disabled; new observations may have no GPS"); }
         public void onStatusChanged(String provider, int status, Bundle extras) {}
@@ -101,7 +106,7 @@ final class RadioScanner {
                 JSONObject row = base("Wi-Fi", r.BSSID, r.SSID, r.level);
                 row.put("frequency", r.frequency).put("security", r.capabilities).put("scan_age_ms", age);
                 row.put("evidence", RfCore.evidence(r.BSSID, r.SSID, Collections.emptyList(), Collections.emptySet()));
-                sink.observation(row);
+                addGps(row); sink.observation(row);
             }
         } catch (SecurityException e) { sink.status("Precise location permission missing or revoked"); }
         catch (Exception e) { sink.status("Wi-Fi needs precise location permission and Location enabled: " + e.getMessage()); }
@@ -126,22 +131,22 @@ final class RadioScanner {
             JSONObject row = base("BLE", address, name, result.getRssi());
             row.put("seen_elapsed", received).put("services", new JSONArray(services)).put("manufacturer_data", payloads)
                 .put("connectable", result.isConnectable()).put("evidence", RfCore.evidence(address, name, services, manufacturers));
-            sink.observation(row);
+            addGps(row); sink.observation(row);
         } catch (Exception e) { sink.status("BLE observation rejected: " + e.getMessage()); }
     }
     private JSONObject base(String radio, String address, String name, int rssi) throws JSONException {
         long now = SystemClock.elapsedRealtime();
         JSONObject row = new JSONObject().put("schema", 1).put("source", "ANDROID").put("time", Instant.now().toString())
             .put("radio", radio).put("address", address).put("name", name == null ? "" : name).put("rssi", rssi).put("seen_elapsed", now);
-        addGps(row);
         return row;
     }
     void addGps(JSONObject row) throws JSONException {
         long now = SystemClock.elapsedRealtime();
         if (fix != null) {
             long age = now - fix.getElapsedRealtimeNanos() / 1_000_000;
-            if (age >= 0 && age <= 10_000 && fix.hasAccuracy()) {
-                row.put("latitude", fix.getLatitude()).put("longitude", fix.getLongitude()).put("accuracy", fix.getAccuracy()).put("gps_age_ms", age);
+            long scanAge=row.optLong("scan_age_ms",0);
+            if (age >= 0 && age <= 10_000 && scanAge>=0 && scanAge<=5_000 && fix.hasAccuracy()) {
+                row.put("latitude", fix.getLatitude()).put("longitude", fix.getLongitude()).put("accuracy", fix.getAccuracy()+(fix.hasSpeed()?fix.getSpeed()*(age+scanAge)/1000.0:0)).put("gps_age_ms", age).put("gps_mock",fix.isFromMockProvider());
             }
         }
     }

@@ -7,7 +7,7 @@
 
 // No Wi-Fi station, AP, association, scan/probe requests, or BLE connections.
 // Only received metadata is queued; payloads/handshakes are not retained.
-struct Event { char radio[8]; char address[18]; char name[80]; char security[16]; char service[40]; uint16_t manufacturer; bool hasManufacturer; int rssi; int frequency; };
+struct Event { char radio[8]; char address[18]; char name[80]; char security[16]; char service[4][40]; uint8_t serviceCount; uint16_t manufacturer; bool hasManufacturer; bool wildcard; bool fingerprint; int rssi; int frequency; };
 static QueueHandle_t events;
 static volatile bool observing = false;
 static uint32_t keepalive = 0, lastHop = 0;
@@ -23,6 +23,7 @@ static void receiveWifi(void* buffer, wifi_promiscuous_pkt_type_t type) {
     WifiMetadata metadata;
     if (!parseWifiMetadata(p, length, metadata)) return;
     Event event = {}; strlcpy(event.radio, "Wi-Fi", sizeof(event.radio)); macString(event.address, metadata.address);
+    event.wildcard=metadata.wildcard;event.fingerprint=metadata.fingerprint;
     event.rssi = packet->rx_ctrl.rssi;
     uint8_t ch = packet->rx_ctrl.channel; event.frequency = ch == 14 ? 2484 : 2407 + ch * 5;
     strlcpy(event.name, metadata.name, sizeof(event.name));
@@ -35,7 +36,8 @@ class Adverts : public NimBLEAdvertisedDeviceCallbacks {
         Event event = {}; strlcpy(event.radio, "BLE", sizeof(event.radio));
         strlcpy(event.address, device->getAddress().toString().c_str(), sizeof(event.address));
         if (device->haveName()) strlcpy(event.name, device->getName().c_str(), sizeof(event.name));
-        if (device->haveServiceUUID()) strlcpy(event.service, device->getServiceUUID().toString().c_str(), sizeof(event.service));
+        event.serviceCount=min(uint8_t(4),device->getServiceUUIDCount());
+        for(uint8_t i=0;i<event.serviceCount;i++)strlcpy(event.service[i],device->getServiceUUID(i).toString().c_str(),sizeof(event.service[i]));
         if (device->haveManufacturerData()) { auto data = device->getManufacturerData(); if (data.size() >= 2) { event.hasManufacturer = true; event.manufacturer = uint8_t(data[0]) | (uint16_t(uint8_t(data[1])) << 8); } }
         event.rssi = device->getRSSI(); xQueueSend(events, &event, 0);
     }
@@ -77,11 +79,12 @@ void loop() {
     Event event;
     // Cap output work per loop so USB keepalives remain responsive in crowded venues.
     for (int n = 0; observing && n < 8 && xQueueReceive(events, &event, 0) == pdTRUE; n++) {
-        StaticJsonDocument<640> row;
+        StaticJsonDocument<1024> row;
         row["radio"] = event.radio; row["address"] = event.address; row["name"] = event.name;
         row["rssi"] = event.rssi; row["frequency"] = event.frequency; row["security"] = event.security;
-        if (event.service[0]) row.createNestedArray("services").add(event.service);
+        if(event.serviceCount){auto services=row.createNestedArray("services");for(uint8_t i=0;i<event.serviceCount;i++)services.add(event.service[i]);}
         if (event.hasManufacturer) row.createNestedArray("manufacturer_ids").add(event.manufacturer);
+        row["wildcard_probe"]=event.wildcard;row["ie_fingerprint"]=event.fingerprint;
         row["connectable"] = false; serializeJson(row, Serial); Serial.println();
     }
     delay(2);

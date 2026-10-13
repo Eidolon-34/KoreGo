@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class MainActivity extends Activity implements RadioScanner.Sink {
-    private static final int BG = Color.rgb(12, 19, 26), PANEL = Color.rgb(22, 34, 43), MINT = Color.rgb(114, 228, 193), TEXT = Color.rgb(232, 241, 246), MUTED = Color.rgb(155, 176, 190), AMBER = Color.rgb(255, 199, 113);
+    private static final int BG = Color.rgb(5, 12, 19), PANEL = Color.rgb(10, 27, 35), MINT = Color.rgb(54, 244, 227), TEXT = Color.rgb(232, 241, 246), MUTED = Color.rgb(155, 176, 190), AMBER = Color.rgb(255, 222, 67);
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final LinkedHashMap<String, JSONObject> live = new LinkedHashMap<>();
@@ -44,7 +44,10 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private android.content.SharedPreferences prefs;
     private LinearLayout content;
     private TextView statusLine, headline;
-    private final Button[] navButtons = new Button[4];
+    private final Button[] navButtons = new Button[5];
+    private final ArrayDeque<SignalMapModel.Point> mapPoints = new ArrayDeque<>();
+    private TileCache tiles;
+    private SignalMapView mapView;
     private int tab;
     private volatile int lifecycle;
     private boolean running, demo, replay, visible, permissionsAsked, dirty = true;
@@ -69,10 +72,11 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         usb = new UsbReceiver(this, new UsbReceiver.Sink() { public void row(JSONObject value) { try { scanner.addGps(value); } catch (JSONException ignored) {} observation(value); } public void status(String value) { MainActivity.this.status(value); } });
         IntentFilter usbFilter = new IntentFilter(getPackageName() + ".USB_PERMISSION");
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(usbPermission, usbFilter, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(usbPermission, usbFilter);
+        tiles = new TileCache(this); mapView = new SignalMapView(this, tiles, key -> { track = key; dirty = true; render(); });
         prefs = getSharedPreferences("settings", MODE_PRIVATE);
-        watchlist = prefs.getString("watchlist", "flock,penguin,fs ext battery");
+        watchlist = prefs.getString("watchlist", "flock,raven,falcon,penguin,fs ext battery,lpr,alpr");
         String saved = prefs.getString("tree", ""); if (!saved.isEmpty()) tree = Uri.parse(saved);
-        LinearLayout root = column(); root.setBackgroundColor(BG); root.setPadding(dp(14), dp(8), dp(14), dp(8));
+        LinearLayout root = column(); root.setBackground(new HudBackground()); root.setPadding(dp(14), dp(8), dp(14), dp(8));
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             view.setPadding(dp(14) + insets.getSystemWindowInsetLeft(), dp(8) + insets.getSystemWindowInsetTop(), dp(14) + insets.getSystemWindowInsetRight(), dp(8) + insets.getSystemWindowInsetBottom());
             return insets;
@@ -82,7 +86,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         headline = text("RF FIELD DESK", 13, MUTED); top.addView(headline); root.addView(top);
         statusLine = text(status, 13, AMBER); statusLine.setMaxLines(2); root.addView(statusLine);
         LinearLayout navigation = row();
-        String[] names = {"Overview", "Signals", "Sessions", "Settings"};
+        String[] names = {"HUD", "Feed", "Map", "Logs", "System"};
         for (int i = 0; i < names.length; i++) { final int n = i; navButtons[i] = button(names[i], () -> { tab = n; dirty = true; render(); }); navigation.addView(navButtons[i], new LinearLayout.LayoutParams(0, dp(52), 1)); }
         root.addView(navigation);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); content = column(); scroll.addView(content);
@@ -90,25 +94,28 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     }
     @Override protected void onStart() { super.onStart(); visible = true; dirty = true; ui.post(tick); }
     @Override protected void onStop() {
-        visible = false; lifecycle++; pendingUsb = null; usb.stop(); ui.removeCallbacks(tick); stopSession(true); closeLab(); super.onStop();
+        visible = false; lifecycle++; tiles.online(false); pendingUsb = null; usb.stop(); ui.removeCallbacks(tick); stopSession(true); closeLab(); super.onStop();
     }
-    @Override protected void onDestroy() { unregisterReceiver(usbPermission); io.shutdown(); super.onDestroy(); }
+    @Override protected void onDestroy() { unregisterReceiver(usbPermission); tiles.close(); io.shutdown(); super.onDestroy(); }
     private void render() {
         if (content == null) return;
         content.removeAllViews(); statusLine.setText(status);
         for (int i = 0; i < navButtons.length; i++) if (navButtons[i] != null) styleButton(navButtons[i], i == tab);
         headline.setText(running ? (demo ? "DEMO · NO RADIOS" : "LIVE · ANDROID") : replay ? "REPLAY · NO RADIOS" : "LOCKED · LOCAL ONLY");
-        if (tab == 0) overview(); else if (tab == 1) signals(); else if (tab == 2) sessions(); else settings();
+        if (tab == 0) overview(); else if (tab == 1) signals(); else if (tab == 2) mapScreen(); else if (tab == 3) sessions(); else settings();
     }
     private void overview() {
         LinearLayout hero = card();
         String face = running ? (events > 0 ? "( ^‿^ )" : "( •_• )") : "( -‿- )";
-        hero.addView(text(face + "   " + (running ? "Observing the air" : "Ready for the field"), 24, MINT));
-        hero.addView(text("A quiet companion for RF awareness", 14, MUTED));
+        hero.addView(text("RF_SENTINEL // " + (running ? "OBSERVING" : "STANDBY"), 22, AMBER));
+        hero.addView(text(face + "   " + (demo ? "SIMULATION / SYNTHETIC" : "SURVEILLANCE AWARENESS"), 14, MINT));
+
         int wifi = 0, ble = 0, matches = 0;
         for (JSONObject r : live.values()) { if (r.optString("radio").equals("BLE")) ble++; else wifi++; if (matches(r)) matches++; }
         hero.addView(text(events + " observations   /   " + wifi + " Wi-Fi   /   " + ble + " BLE   /   " + matches + " matches", 18, TEXT));
         hero.addView(text("Live device counts cover the latest " + RfCore.MAX_LIVE + " addresses. Epoch " + events / 25 + " · observation epochs, no handshake collection.", 13, MUTED));
+        int flocks=0,ravens=0,falcons=0;for(JSONObject r:live.values()){String tags=r.optString("tags");if(tags.contains("FLOCK"))flocks++;if(tags.contains("RAVEN"))ravens++;if(tags.contains("FALCON"))falcons++;}
+        hero.addView(text("FLOCK "+flocks+"   RAVEN "+ravens+"   FALCON "+falcons+"  // CANDIDATES",15,AMBER));
         content.addView(hero);
         LinearLayout actions = row();
         actions.addView(button(running ? "Stop & save" : "Start discovery", () -> { if (running) stopSession(false); else authenticate("Start discovery", this::requestDiscovery); }), new LinearLayout.LayoutParams(0, dp(58), 1));
@@ -120,11 +127,11 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         content.addView(radios);
         note("Discovery listens for Android Wi-Fi result broadcasts and scans BLE advertisements. Android / Bluetooth firmware can send standard discovery traffic; this is not guaranteed RF-silent. No auto-connect, password attacks, deauthentication, or packet injection.");
         note("GPS fields mark the receiver's position, not the transmitter. RSSI tracking shows relative strength, not distance or a precise device location.");
-        if (gate.isDefault()) note("Initial passcode: 9818. Change it in Settings before connected training. Each scan session, export, and connected action requires approval.");
+        if (gate.isDefault()) note("Initial passcode: 9818. Change it in System before connected training. Each scan session, export, and connected action requires approval.");
     }
     private void signals() {
         LinearLayout choices = row();
-        for (String value : new String[]{"All", "Wi-Fi", "BLE", "Matches"}) choices.addView(button(value, () -> { filter = value.equals("All") ? "" : value; dirty = true; render(); }), new LinearLayout.LayoutParams(0, dp(50), 1));
+        for (String value : new String[]{"Priority", "Wi-Fi", "BLE", "All"}) choices.addView(button(value, () -> { filter = value; dirty = true; render(); }), new LinearLayout.LayoutParams(0, dp(50), 1));
         content.addView(choices);
         if (!track.isEmpty()) {
             JSONObject target = live.get(track);
@@ -137,14 +144,16 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
             hunt.addView(button("Clear target", () -> { track = ""; trace.clear(); render(); })); content.addView(hunt);
         }
         List<JSONObject> list = new ArrayList<>(live.values());
-        list.sort((a, b) -> Integer.compare(b.optInt("rssi"), a.optInt("rssi")));
+        list.sort((a,b)->{int rank=Integer.compare(b.optInt("priority"),a.optInt("priority"));return rank!=0?rank:Integer.compare(b.optInt("rssi"),a.optInt("rssi"));});
         int shown = 0;
         for (JSONObject r : list) {
-            if (filter.equals("Matches") && !matches(r)) continue;
+            if ((filter.equals("Priority") || filter.isEmpty()) && r.optInt("priority")==0 && !matches(r)) continue;
             if ((filter.equals("Wi-Fi") || filter.equals("BLE")) && !filter.equals(r.optString("radio"))) continue;
             if (++shown > 100) break;
             LinearLayout item = card();
             String name = r.optString("name"); if (name.isEmpty()) name = "Unnamed / hidden";
+            String tagLabel=r.optString("tags").replace("[", "").replace("]", "").replace("\"", "");
+            if(!tagLabel.isEmpty())item.addView(text(tagLabel+" // "+r.optString("confidence")+" CANDIDATE",13,SignalMapView.color(tagLabel)));
             item.addView(text(r.optString("radio") + "  ·  " + name, 18, TEXT));
             long age = SystemClock.elapsedRealtime() - r.optLong("seen_elapsed", 0);
             item.addView(text(r.optString("address") + "   " + r.optInt("rssi") + " dBm" + (replay ? "   REPLAY" : age > RfCore.FRESH_MS ? "   STALE" : "   " + Math.max(0, age / 1000) + "s ago"), 14, MINT));
@@ -155,9 +164,10 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         else note("Tap a signal to track it or inspect its evidence. Showing up to 100 rows by strength; full observations remain in session logs.");
     }
     private void detail(JSONObject row) {
-        String[] options = row.optString("radio").equals("BLE") ? new String[]{"Track signal", "View recorded data", "Consented service inventory…"} : new String[]{"Track signal", "View recorded data", "Review advertised security"};
+        String[] options = row.optString("radio").equals("BLE") ? new String[]{"Track signal", "View recorded data", "Consented service inventory…", "Show on map"} : new String[]{"Track signal", "View recorded data", "Review advertised security", "Show on map"};
         new AlertDialog.Builder(this).setTitle(row.optString("address")).setItems(options, (d, index) -> {
             if (index == 0) { track = row.optString("radio") + "/" + row.optString("address"); trace.clear(); tab = 1; render(); }
+            else if(index==3){track=row.optString("radio")+"/"+row.optString("address");tab=2;render();}
             else if (index == 1) { try { message("Recorded observation", row.toString(2)); } catch (Exception ignored) {} }
             else if (row.optString("radio").equals("BLE")) labConsent(row);
             else message("Advertised Wi-Fi security", row.optString("security", "No capability data") + "\n\nThis reviews public AP capability flags. It does not validate passwords, inspect traffic, or attempt access.");
@@ -170,15 +180,34 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         List<String> result = new ArrayList<>(); JSONArray array = row.optJSONArray("services");
         if (array != null) for (int i = 0; i < array.length(); i++) result.add(array.optString(i)); return result;
     }
+    private void mapScreen() {
+        content.addView(text("SIGNAL CARTOGRAPHY // "+(demo?"DEMO":replay?"HISTORICAL":"LOCAL"),19,AMBER));
+        LinearLayout tools=row();
+        tools.addView(button("+",()->mapView.zoom(1)),new LinearLayout.LayoutParams(0,dp(50),1));
+        tools.addView(button("−",()->mapView.zoom(-1)),new LinearLayout.LayoutParams(0,dp(50),1));
+        tools.addView(button("Center",mapView::center),new LinearLayout.LayoutParams(0,dp(50),2));
+        tools.addView(button("All",()->{track="";render();}),new LinearLayout.LayoutParams(0,dp(50),1));content.addView(tools);
+        mapView.setData(new ArrayList<>(mapPoints),track);
+        content.addView(mapView,new LinearLayout.LayoutParams(-1,dp(getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE?260:380)));
+        content.addView(button(tiles.isOnline()?"Disable street tiles":"Enable street tiles…",()->{
+            if(tiles.isOnline()){tiles.online(false);mapView.invalidate();render();return;}
+            new AlertDialog.Builder(this).setTitle("Online street basemap").setMessage("OpenStreetMap receives your IP address and requested map tile area. Device addresses, names and session logs are not sent. Downloads cover only this visible map; offline observations remain local.")
+                .setPositiveButton("Approve with passcode",(d,w)->authenticate("Enable OSM tiles for this foreground visit",()->{tiles.online(true);status(tiles.isOnline()?"Street tiles enabled for current app visit":"Map cache unavailable; staying offline");render();})).setNegativeButton("Cancel",null).show();
+        }));
+        SignalMapModel.Estimate estimate=mapView.estimate();
+        note(track.isEmpty()?"Tap a receiver observation to select a signal. Cyan = Flock, magenta = Raven, yellow = Falcon/LPR. No transmitter location is assumed.":"TARGET "+track+" // points mark reception, not the camera.");
+        note(estimate==null?"Origin unresolved. A tentative model needs 8+ accurate GPS positions around a stationary source, ≥60 m coverage, turns, and varied RSSI. Straight routes, weak fits, mocked GPS, and sparse data produce no estimate.":String.format(Locale.ROOT,"%sRSSI MODEL SEARCH AREA // ±%.0f m footprint · %.1f dBm fit residual. Assumes a stationary transmitter and simple propagation; NOT measured coordinates or a statistical confidence interval.",estimate.demo?"DEMO ":"",estimate.radius,estimate.rms));
+        if(mapPoints.isEmpty())note("No GPS-tagged observations yet. Grant precise location and scan outdoors, or run the synthetic demo route.");
+    }
     private void sessions() {
         content.addView(button("Choose save folder / SD card…", () -> authenticate("Choose recording destination", this::pickFolder)));
-        note(tree == null ? "Save destination: private app storage. Select a writable SD folder to automatically copy completed sessions there." : "Save destination: " + tree + "\nCompleted sessions are copied as JSONL + CSV. Private recovery copies remain on the radio.");
+        note(tree == null ? "Save destination: private app storage. Select a writable SD folder to automatically copy completed sessions there." : "Save destination: " + tree + "\nCompleted sessions are copied as JSONL + CSV + GeoJSON. Private recovery copies remain on the radio.");
         content.addView(button("Export consent audit…", () -> authenticate("Export consent audit", this::exportAudit)));
         List<File> files = store.files();
         if (files.isEmpty()) note("No saved sessions yet.");
         for (File file : files) {
             LinearLayout item = card(); item.addView(text(file.getName(), 16, TEXT)); item.addView(text(file.length() / 1024 + " KB · private recovery copy", 13, MUTED));
-            item.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle(file.getName()).setItems(new String[]{"Replay latest 512 devices", "Export JSONL + CSV", "Delete private copy"}, (dialog, index) -> {
+            item.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle(file.getName()).setItems(new String[]{"Replay latest 512 devices", "Export JSONL + CSV + GeoJSON", "Delete private copy"}, (dialog, index) -> {
                 if (index == 0) authenticate("Replay saved observations", () -> replay(file));
                 else if (index == 1) authenticate("Export saved session", () -> { stopSession(false); export(file); });
                 else authenticate("Delete private session", () -> { if (running) { message("Stop first", "Stop the current recording before deleting sessions."); return; } io.execute(() -> { boolean deleted = file.delete(); ui.post(() -> { if (!deleted) status("Delete failed"); render(); }); }); });
@@ -200,9 +229,9 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         content.addView(button("Open app permissions", () -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())))));
         content.addView(button("Open Android radio settings", () -> startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS))));
         content.addView(button("Use private storage", () -> authenticate("Change destination", () -> { tree = null; prefs.edit().remove("tree").apply(); status("Private recording storage selected"); })));
-        note("No Internet permission, upload service, exported scanner, background scanning, BLE writes, or arbitrary firmware commands. Closing / leaving the app stops discovery and connected training. Sessions remain in private storage until explicitly deleted.");
+        note("No upload service, exported scanner, background scanning, BLE writes, or arbitrary firmware commands. Closing / leaving the app stops discovery and connected training. Sessions remain in private storage until explicitly deleted.");
         note("The USB adapter supports direct ESP32-S3 CDC-ACM with the bundled passive firmware. CP210x/CH340 bridges are not supported. Built-in Android radios cannot expose raw 802.11 frames, monitor mode, or all client-only devices. Flock signature matches are hypotheses that can be spoofed; missed detections are possible.");
-        note("Persephone RF 0.1 · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
+        note("Persephone RF 0.2 · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
     }
     private void authenticate(String reason, Runnable action) {
         if (!visible) return;
@@ -248,13 +277,13 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     }
     @Override public void onRequestPermissionsResult(int request, String[] names, int[] grants) {
         super.onRequestPermissionsResult(request, names, grants);
-        if (request == 7) { status("Permissions updated. Start discovery to approve a session; missing capabilities are listed in Settings."); diagnostics(); }
+        if (request == 7) { status("Permissions updated. Start discovery to approve a session; missing capabilities are listed in System."); diagnostics(); }
     }
     private void startSession(boolean simulated) {
         stopSession(false);
         try { session = store.new Session(simulated); }
         catch (IOException e) { status("Cannot record: " + e.getMessage()); return; }
-        running = true; demo = simulated; replay = false; events = 0; live.clear(); smoothed.clear(); trace.clear(); track = "";
+        running = true; demo = simulated; replay = false; events = 0; live.clear(); mapPoints.clear(); smoothed.clear(); trace.clear(); track = "";
         status = simulated ? "Demo recording · synthetic data only" : "Recording · Wi-Fi result listener + BLE discovery";
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (!simulated) scanner.start(); dirty = true; render();
@@ -266,13 +295,15 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         status = leaving ? "Session saved; discovery stopped when app left foreground" : "Session saved · radios stopped";
         Uri destination = tree;
         io.execute(() -> {
-            try { completed.close(); if (destination != null) { store.export(completed.file, destination); ui.post(() -> status("Saved JSONL + CSV to selected folder")); } }
+            try { completed.close(); if (destination != null) { store.export(completed.file, destination); ui.post(() -> status("Saved JSONL + CSV + GeoJSON to selected folder")); } }
             catch (Exception e) { ui.post(() -> status("SD/export failed; private copy retained: " + e.getMessage())); }
         });
         dirty = true; if (visible) render();
     }
     @Override public void observation(JSONObject row) {
         if (!running) return;
+        try { DetectionAnnotator.annotate(row); } catch(JSONException invalid) { status("Invalid detector metadata"); return; }
+        SignalMapModel.Point location=DetectionAnnotator.point(row);if(location!=null){mapPoints.addLast(location);while(mapPoints.size()>2000)mapPoints.removeFirst();}
         String key = row.optString("radio") + "/" + row.optString("address");
         live.remove(key); live.put(key, row); while (live.size() > RfCore.MAX_LIVE) { String oldest = live.keySet().iterator().next(); live.remove(oldest); smoothed.remove(oldest); }
         float smooth = smoothed.containsKey(key) ? RfCore.smooth(smoothed.get(key), row.optInt("rssi")) : row.optInt("rssi"); smoothed.put(key, smooth);
@@ -283,7 +314,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     @Override public void status(String message) { status = message; dirty = true; if (statusLine != null) statusLine.setText(message); }
     private void wifiConsent() {
         if (!running || demo) { message("Start discovery first", "A real Android discovery session is required."); return; }
-        if (gate.isDefault()) { message("Change passcode first", "Set a personal passcode in Settings before requesting radio transmissions."); return; }
+        if (gate.isDefault()) { message("Change passcode first", "Set a personal passcode in System before requesting radio transmissions."); return; }
         new AlertDialog.Builder(this).setTitle("Request a standard Wi-Fi scan?")
             .setMessage("Android may transmit ordinary probe requests. This affects the radio's scan area and cannot be restricted to one AP. Use only within your authorized training setting. Android may throttle this request.")
             .setPositiveButton("Authorize with passcode", (d, w) -> authenticate("Approve one Wi-Fi scan", () -> audited("wifi_scan", "local scan area", "Operator confirmed authorized training setting", () -> {
@@ -371,7 +402,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private void export(File file) {
         if (tree == null) { message("Choose a save folder", "Select an SD-card folder or another Android document provider in Sessions, then export again."); return; }
         Uri destination = tree; status("Exporting…");
-        io.execute(() -> { try { store.export(file, destination); ui.post(() -> status("Exported JSONL + CSV to selected folder")); } catch (Exception e) { ui.post(() -> status("Export failed; private copy retained: " + e.getMessage())); } });
+        io.execute(() -> { try { store.export(file, destination); ui.post(() -> status("Exported JSONL + CSV + GeoJSON to selected folder")); } catch (Exception e) { ui.post(() -> status("Export failed; private copy retained: " + e.getMessage())); } });
     }
     private void exportAudit() {
         if (tree == null) { message("Choose a save folder", "Select a destination in Sessions first."); return; }
@@ -389,11 +420,11 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private void replay(File file) {
         stopSession(false); final int epoch = lifecycle; status("Loading replay…");
         io.execute(() -> {
-            LinkedHashMap<String, JSONObject> rows = new LinkedHashMap<>(); int count = 0;
+            LinkedHashMap<String, JSONObject> rows = new LinkedHashMap<>(); ArrayDeque<SignalMapModel.Point> locations=new ArrayDeque<>(); int count = 0;
             try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-                String line; while ((line = in.readLine()) != null) { try { JSONObject r = new JSONObject(line); rows.put(r.optString("radio") + "/" + r.optString("address"), r); while (rows.size() > RfCore.MAX_LIVE) rows.remove(rows.keySet().iterator().next()); count++; } catch (JSONException partial) {} }
+                String line; while ((line = in.readLine()) != null) { try { JSONObject r = new JSONObject(line); DetectionAnnotator.annotate(r);SignalMapModel.Point p=DetectionAnnotator.point(r);if(p!=null){locations.addLast(p);while(locations.size()>2000)locations.removeFirst();} rows.put(r.optString("radio") + "/" + r.optString("address"), r); while (rows.size() > RfCore.MAX_LIVE) rows.remove(rows.keySet().iterator().next()); count++; } catch (JSONException partial) {} }
                 final int total = count;
-                ui.post(() -> { if (!visible || epoch != lifecycle || running) return; live.clear(); live.putAll(rows); smoothed.clear(); trace.clear(); track = ""; events = total; demo = false; replay = true; tab = 1; status("Replay loaded · no radios · " + file.getName()); render(); });
+                ui.post(() -> { if (!visible || epoch != lifecycle || running) return; live.clear(); live.putAll(rows); mapPoints.clear();mapPoints.addAll(locations); smoothed.clear(); trace.clear(); track = ""; events = total; demo = false; replay = true; tab = 1; status("Replay loaded · no radios · " + file.getName()); render(); });
             } catch (Exception e) { ui.post(() -> status("Replay failed: " + e.getMessage())); }
         });
     }
@@ -431,11 +462,14 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     }
     private void generateDemo() {
         try {
-            int n = events % 8;
-            JSONObject row = new JSONObject().put("schema", 1).put("source", "DEMO").put("time", Instant.now().toString()).put("radio", n % 2 == 0 ? "Wi-Fi" : "BLE")
-                .put("address", String.format(Locale.ROOT, "02:00:00:00:00:%02X", n)).put("name", n == 3 ? "Penguin-DEMO" : "Training sample " + n)
-                .put("rssi", -45 - (events * 7 % 40)).put("seen_elapsed", SystemClock.elapsedRealtime()).put("security", n % 2 == 0 ? "[WPA2-PSK-CCMP][ESS]" : "")
-                .put("frequency", n % 2 == 0 ? 2412 : 0).put("evidence", n == 3 ? "Synthetic name signature; not a real detection" : "").put("connectable", false);
+            int n=events%4;String[] names={"Flock-DEMO","Raven-DEMO","Falcon-DEMO","Training beacon"};
+            int leg=events/4%24;double angle=leg*Math.PI/12, x=(70+(leg%3)*25)*Math.cos(angle), y=(55+(leg%4)*18)*Math.sin(angle);
+            double distance=Math.hypot(x-45,y-20);int rssi=(int)Math.round(-28-22*Math.log10(Math.max(3,distance)));
+            JSONObject row=new JSONObject().put("schema",1).put("source","DEMO").put("time",Instant.now().toString()).put("radio",n%2==0?"Wi-Fi":"BLE")
+                .put("address",String.format(Locale.ROOT,"02:00:00:00:00:%02X",n)).put("name",names[n]).put("rssi",rssi).put("seen_elapsed",SystemClock.elapsedRealtime())
+                .put("latitude",36.1699+y/111320).put("longitude",-115.1398+x/(111320*Math.cos(Math.toRadians(36.1699)))).put("accuracy",5).put("gps_age_ms",0)
+                .put("security",n%2==0?"[WPA2-PSK-CCMP][ESS]":"").put("frequency",n%2==0?2412:0).put("connectable",false);
+            if(n==1)row.put("services",new JSONArray(Arrays.asList("00003100-0000-1000-8000-00805f9b34fb","00003200-0000-1000-8000-00805f9b34fb")));
             observation(row);
         } catch (Exception e) { status("Demo error: " + e.getMessage()); }
     }
@@ -449,15 +483,15 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private LinearLayout row() { LinearLayout view = new LinearLayout(this); view.setOrientation(LinearLayout.HORIZONTAL); view.setGravity(Gravity.CENTER_VERTICAL); return view; }
     private LinearLayout card() {
         LinearLayout view = column(); view.setPadding(dp(16), dp(12), dp(16), dp(12));
-        GradientDrawable background = new GradientDrawable(); background.setColor(PANEL); background.setCornerRadius(dp(14)); view.setBackground(background);
+        GradientDrawable background = new GradientDrawable(); background.setColor(PANEL); background.setCornerRadius(dp(3)); background.setStroke(dp(1),Color.rgb(30,73,84)); view.setBackground(background);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.setMargins(0, dp(8), 0, dp(4)); view.setLayoutParams(params); return view;
     }
-    private TextView text(String value, int size, int color) { TextView text = new TextView(this); text.setText(value); text.setTextSize(size); text.setTextColor(color); text.setPadding(0, dp(3), 0, dp(3)); return text; }
-    private Button button(String value, Runnable action) { Button button = new Button(this); button.setText(value); button.setTextSize(16); button.setTypeface(null, android.graphics.Typeface.BOLD); button.setAllCaps(false); button.setTextColor(MINT); button.setMinHeight(dp(50)); button.setOnClickListener(v -> action.run()); styleButton(button, false); return button; }
+    private TextView text(String value, int size, int color) { TextView text = new TextView(this); text.setText(value); text.setTextSize(size); text.setTextColor(color); text.setTypeface(android.graphics.Typeface.MONOSPACE); text.setPadding(0, dp(3), 0, dp(3)); return text; }
+    private Button button(String value, Runnable action) { Button button = new Button(this); button.setText(value); button.setTextSize(16); button.setTypeface(null, android.graphics.Typeface.BOLD); button.setAllCaps(true); button.setTypeface(android.graphics.Typeface.MONOSPACE,android.graphics.Typeface.BOLD); button.setAutoSizeTextTypeUniformWithConfiguration(11,16,1,android.util.TypedValue.COMPLEX_UNIT_SP); button.setTextColor(MINT); button.setMinHeight(dp(50)); button.setOnClickListener(v -> action.run()); styleButton(button, false); return button; }
     private void styleButton(Button button, boolean selected) {
-        GradientDrawable shape = new GradientDrawable(); shape.setColor(selected ? Color.rgb(28, 63, 61) : PANEL); shape.setCornerRadius(dp(10)); shape.setStroke(dp(1), selected ? MINT : Color.rgb(44, 65, 78));
+        GradientDrawable shape = new GradientDrawable(); shape.setColor(selected ? AMBER : PANEL); shape.setCornerRadius(dp(2)); shape.setStroke(dp(1), selected ? AMBER : Color.rgb(38,92,103));
         android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(48, 94, 86)), shape, null);
-        button.setBackground(new android.graphics.drawable.InsetDrawable(ripple, dp(3))); button.setTextColor(selected ? MINT : TEXT);
+        button.setBackground(new android.graphics.drawable.InsetDrawable(ripple, dp(3))); button.setTextColor(selected ? BG : MINT);
     }
     private EditText edit(String hint) { EditText edit = new EditText(this); edit.setHint(hint); edit.setTextColor(TEXT); edit.setHintTextColor(MUTED); edit.setSingleLine(true); return edit; }
     private void note(String value) { TextView note = text(value, 14, MUTED); note.setPadding(dp(4), dp(12), dp(4), dp(8)); content.addView(note); }

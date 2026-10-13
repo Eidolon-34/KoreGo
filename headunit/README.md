@@ -1,8 +1,8 @@
-# Persephone RF — Android head-unit edition
+# KoreGo — Android RF exploration edition
 
-A small native Android app for local RF discovery and consent-based training. It lives beside the existing OUI-SPY Flutter companion and uses a separate package (`com.heathen.persephone`). The original companion/firmware are not dependencies of this APK.
+A small native Android app for local RF discovery and consent-based training. It lives beside the existing OUI-SPY Flutter companion and uses a separate package (`com.eidolon.korego`). The original companion/firmware are not dependencies of this APK.
 
-## What works in this build (0.4)
+## What works in this inherited field desk (KoreGo 0.1)
 
 - Android Wi-Fi **result listening** and BLE advertisement discovery without an ESP32.
 - Optional **passive ESP32-S3 over direct USB CDC-ACM**, with bundled receive-only firmware. This adds received Wi-Fi beacons and client probe-request metadata, including devices that do not expose an AP.
@@ -21,10 +21,10 @@ This is a compiled training preview, not a claim of radio-specific hardware qual
 Minimum Android: **8.0 / API 26**. Sideload the debug APK through the radio's file manager, or use:
 
 ```sh
-adb install -r persephone-rf-debug.apk
+adb install -r korego-debug.apk
 ```
 
-1. Open **Persephone RF**. Initial passcode: **9818**.
+1. Open **KoreGo**. Initial passcode: **9818**.
 2. System → Change passcode → approve with `9818` → enter a personal 6–12 digit passcode twice. Connected inventory and explicit Wi-Fi scan requests are blocked while the initial passcode is still in use.
 3. Enable Wi-Fi, Bluetooth, and Android Location. Grant precise location and, on Android 12+, nearby Bluetooth permissions.
 4. Logs → Choose save folder / SD card → select a writable **folder** on the card. Android 11+ can prohibit selecting storage roots; choose a subfolder such as `Persephone`.
@@ -49,7 +49,7 @@ Name, service, and manufacturer evidence are shown as **unverified signatures**,
 - Five failed attempts impose a persisted 60-second cooldown. A correct passcode unlocks the app for exactly one hour of elapsed time, including time spent in Maps. The lease persists across process restarts within the same boot; reboot, passcode change, or **Lock now** invalidates it. Discovery and overlay stop on expiry. Every connected action still requires an owner/consent reference and an explicit ownership/informed-consent checkbox.
 - The exact target must be a connectable BLE address observed within 30 seconds, during a real native discovery session. Demo/replay/USB observations cannot start connected training.
 - The approval audit must persist before radio actions run. Inventory closes after completion, failure, app exit, or 15 seconds. It never reads/writes characteristic values.
-- App backup/device-transfer are excluded; the only exported manifest component is the launcher Activity; a temporary Wi-Fi system-broadcast listener reads only fresh results from WifiManager, never broadcast-supplied observations. There is no upload service. Internet permission exists solely for an explicitly approved street basemap; it is disabled by default and whenever the app leaves the foreground. The original upstream companion's robot exploitation controls and firmware commands are not reachable from this APK.
+- App backup/device-transfer are excluded; the only exported manifest component is the KoreGo launcher Activity; a temporary Wi-Fi system-broadcast listener reads only fresh results from WifiManager, never broadcast-supplied observations. There is no upload service. Internet permission exists solely for an explicitly approved street basemap; it is disabled by default and whenever the app leaves the foreground. The original upstream companion's robot exploitation controls and firmware commands are not reachable from this APK.
 - The public initial PIN is a setup value, **not theft protection**. Change it. An app PIN cannot defend against root access, reflashing/uninstalling/clearing app data, extracting an unlocked SD card. SD exports are plaintext training data; private files use Android's app sandbox. UI screenshots are blocked on-device.
 - Operators enter consent references themselves; the app does not independently verify a volunteer's identity or consent. Use connected training while parked, with a dedicated owned/volunteer device. A passenger can operate discovery during a driving demonstration.
 
@@ -145,7 +145,7 @@ A dashed orange **MODEL SEARCH AREA** is shown only for an eligible selected sta
 
 **Enable street tiles…** explains privacy and requires the passcode. OSM receives the IP and requested viewport/tile area; no names, MACs, tags, or recordings are uploaded. Requests use HTTPS, an application User-Agent, visible attribution, and a 32 MiB HTTP cache honoring server headers. Only visible tiles are requested; there is no bulk/offline-area download. Disabled tiles and missing Internet leave the local overlay usable. Network enablement expires on foreground exit. [OSM tile policy](https://operations.osmfoundation.org/policies/tiles/).
 
-Use the Nothing Phone 3 for mobile GPS/radio testing; the HiBy R4 install/launch test is also supported. Outdoor precise-location fixes are needed for a meaningful receiver route. Installing/launching is not equivalent to live RF, map-source, SD, or external-receiver qualification. The currently connected Nothing device is Android 16 / API 36; the R4 is Android 12 / API 31. Both use the same app ID/debug signing key, so updates preserve the private passcode and recordings.
+Use the Nothing Phone 3 for mobile GPS/radio testing; the HiBy R4 install/launch test is also supported. Outdoor precise-location fixes are needed for a meaningful receiver route. Installing/launching is not equivalent to live RF, map-source, SD, or external-receiver qualification. The currently connected Nothing device is Android 16 / API 36; the R4 is Android 12 / API 31. Both use the KoreGo app ID/debug signing key, so same-key KoreGo updates preserve its private passcode and recordings. KoreGo and Persephone are separate apps; private records, PIN, permissions, and folder grants are not migrated automatically.
 
 
 ## Transparent overlay on Google Maps / other map apps
@@ -163,3 +163,8 @@ GPS/photo/nickname notes remain private and durable. GPS capture requires a non-
 Starting discovery now presents an approval checkbox for **every-30-second Wi-Fi refresh**, selected initially when a personal passcode is configured. The cadence is a request schedule, not a guarantee of a completed scan. Normal probes can be transmitted in the scan area. Approval and an audit cover the session; Stop, app-only foreground exit, Lock now, or unlock expiry cancel the timer. The Feed/HUD Wi-Fi control can stop refresh immediately or approve one scan / periodic scans. BLE scanning continues independently. No association, attacks, deauthentication, custom packet injection, or OS throttle bypass occurs.
 
 The **Priority** feed hides ordinary APs; select **Wi-Fi** or **All**. Wi-Fi and Android Location must be enabled and precise location granted. Results older than 30 seconds remain excluded and repeated result timestamps are not logged twice. Android normally permits four foreground scans per two minutes, and imposes tighter background limits; other requests and OEM behavior can cause throttling even at a 30-second cadence. [Android scan limits](https://developer.android.com/develop/connectivity/wifi/wifi-scan).
+
+
+## KoreGo integrated view
+
+The launcher opens the full-screen **Field Map**. This map owns its geographic projection, so panning/zooming/GPS Follow stay synchronized with markers. Explore records native discovery only while this screen is foreground; editing notes, opening Dex/Desk, or switching apps stops and saves it. The separate, explicitly approved overlay service retains its own lifetime. Demo shows synthetic creatures without RF and isolates progress from field sightings. Dex species/name/function customization and manual ping assignment preserve original detector tags/evidence. Export Signal Dex uses the selected SAF folder and includes species descriptions/counters, not MAC addresses. See the root README for current game features and limits.

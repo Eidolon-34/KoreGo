@@ -28,6 +28,7 @@ public final class PingEditorActivity extends Activity {
         root.addView(text("GPS marks your phone position. It does not verify the transmitter's location or identity.",13,0xffafc4ce));
         nickname=input("Nickname (80 characters)");nickname.setText(saved==null?ping.optString("nickname"):saved.getString("nickname"));note=input("Observation note");note.setSingleLine(false);note.setText(saved==null?ping.optString("note"):saved.getString("note"));root.addView(nickname);root.addView(note);
         info=text("",13,0xffafc4ce);root.addView(info);root.addView(button("Capture fresh phone GPS",this::captureGps));root.addView(button("Attach existing photo",this::pickPhoto));root.addView(button("Take a photo",this::camera));
+        root.addView(button("Assign a Signal Dex creature",this::assignCreature));
         photos=new LinearLayout(this);photos.setOrientation(LinearLayout.VERTICAL);root.addView(photos);root.addView(button("Save nickname / note",this::save));root.addView(button("Done / return to map",()->{save();OverlayService.showAfterEditor(this);finish();}));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(root);setContentView(scroll);refresh();
     }
@@ -57,6 +58,7 @@ public final class PingEditorActivity extends Activity {
             store.photo(id,output.getName());store.flush();ui.post(this::refresh);
         }catch(Exception e){output.delete();ui.post(()->info.setText("Photo failed: "+e.getMessage()));}finally{raw.delete();if(temporary!=null)new File(store.photos,temporary).delete();}
     });}
+    private void assignCreature(){if(!PinGate.require(this))return;java.util.List<JSONObject> creatures=DexCatalog.entries(this);String[] names=new String[creatures.size()];for(int i=0;i<names.length;i++)names[i]=DexCatalog.title(this,creatures.get(i).optString("id"));new AlertDialog.Builder(this).setTitle("Assign a creature representation").setItems(names,(dialog,index)->{if(!PinGate.require(this))return;try{store.creature(id,creatures.get(index).getString("id"));DexLedger.record(this,store.getPing(id));store.flush();info.setText("Assigned "+names[index]+". Detector evidence remains unchanged.");}catch(Exception error){info.setText(error.getMessage());}}).setNegativeButton("Cancel",null).show();}
     private static Bitmap orient(Bitmap source,File file)throws IOException {
         androidx.exifinterface.media.ExifInterface exif=new androidx.exifinterface.media.ExifInterface(file);
         int orientation=exif.getAttributeInt(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,1);Matrix transform=new Matrix();

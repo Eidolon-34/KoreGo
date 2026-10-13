@@ -1,0 +1,9 @@
+[
+ {"id":"flock","name":"Sentinel Lynx","color":"#41F4E7","function":"Review Flock-family evidence, save reception GPS, and document consented field observations.","description":"A watchful circuit creature. A Flock candidate is a clue, never a confirmed camera."},
+ {"id":"raven","name":"Echo Bat","color":"#DE69FF","function":"Inspect Raven-name/custom BLE service evidence and track relative RSSI.","description":"Listens for broadcast identifiers. Shared standard BLE services do not establish Raven identity."},
+ {"id":"falcon","name":"Aperture Raptor","color":"#FFDE43","function":"Review Falcon/LPR name hints, annotate coordinates and photographs.","description":"A golden lens guardian. Model/name evidence remains unverified."},
+ {"id":"camera","name":"Lens Beetle","color":"#FFAA66","function":"Review other camera-vendor hints and attach local field notes.","description":"A tiny armored optic. RF cannot reveal every wired, cellular, or silent camera."},
+ {"id":"wifi","name":"Neon Wisp","color":"#749FBA","function":"Observe access-point metadata and relative signal strength; refresh only with approved standard scans.","description":"A luminous network wanderer. Sightings never require association or password attacks."},
+ {"id":"ble","name":"Cipher Moth","color":"#79A6FF","function":"Observe BLE advertisements. Owned/volunteer GATT inventory remains separately consent-gated in the field desk.","description":"A winged messenger of advertised services and manufacturer hints."},
+ {"id":"unknown","name":"Static Sprite","color":"#A7B6C2","function":"Keep uncertain sightings available for later manual annotation.","description":"An unresolved signal. Unknown evidence is never upgraded into a confident identity."}
+]

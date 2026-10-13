@@ -77,13 +77,14 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         prefs = getSharedPreferences("settings", MODE_PRIVATE);
         watchlist = prefs.getString("watchlist", "flock,raven,falcon,penguin,fs ext battery,lpr,alpr");
         String saved = prefs.getString("tree", ""); if (!saved.isEmpty()) tree = Uri.parse(saved);
+        if(getIntent().getBooleanExtra("settings",false))tab=4;
         LinearLayout root = column(); root.setBackground(new HudBackground()); root.setPadding(dp(14), dp(8), dp(14), dp(8));
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             view.setPadding(dp(14) + insets.getSystemWindowInsetLeft(), dp(8) + insets.getSystemWindowInsetTop(), dp(14) + insets.getSystemWindowInsetRight(), dp(8) + insets.getSystemWindowInsetBottom());
             return insets;
         });
         LinearLayout top = row();
-        top.addView(text("PERSEPHONE", 23, MINT), new LinearLayout.LayoutParams(0, -2, 1));
+        top.addView(text("KOREGO", 23, MINT), new LinearLayout.LayoutParams(0, -2, 1));
         headline = text("RF FIELD DESK", 13, MUTED); top.addView(headline); root.addView(top);
         statusLine = text(status, 13, AMBER); statusLine.setMaxLines(2); root.addView(statusLine);
         LinearLayout navigation = row();
@@ -257,7 +258,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         content.addView(button("Use private storage", () -> authenticate("Change destination", () -> { tree = null; prefs.edit().remove("tree").apply(); status("Private recording storage selected"); })));
         note("No upload service, exported scanner, BLE writes, or arbitrary firmware commands. App-only discovery stops on exit. Explicitly approved Maps-overlay discovery uses a foreground notification until Stop, lock expiry, or task removal. Connected testing stops on exit. Sessions remain in private storage until explicitly deleted.");
         note("The USB adapter supports direct ESP32-S3 CDC-ACM with the bundled passive firmware. CP210x/CH340 bridges are not supported. Built-in Android radios cannot expose raw 802.11 frames, monitor mode, or all client-only devices. Flock signature matches are hypotheses that can be spoofed; missed detections are possible.");
-        note("Persephone RF 0.4 · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
+        note("KoreGo 0.1 / field desk · Android API " + Build.VERSION.SDK_INT + " · " + Build.MANUFACTURER + " " + Build.MODEL);
     }
     private void authenticate(String reason, Runnable action) {
         if (!visible) return;
@@ -339,7 +340,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     @Override public void observation(JSONObject row) {
         if (!running) return;
         try { DetectionAnnotator.annotate(row); } catch(JSONException invalid) { status("Invalid detector metadata"); return; }
-        try { PingStore.get(this).observe(row); } catch(JSONException invalid) { status("Ping metadata rejected"); }
+        try { PingStore.get(this).observe(row);DexLedger.record(this,row); } catch(JSONException invalid) { status("Ping metadata rejected"); }
         SignalMapModel.Point location=DetectionAnnotator.point(row);if(location!=null){mapPoints.addLast(location);while(mapPoints.size()>2000)mapPoints.removeFirst();}
         String key = row.optString("radio") + "/" + row.optString("address");
         live.remove(key); live.put(key, row); while (live.size() > RfCore.MAX_LIVE) { String oldest = live.keySet().iterator().next(); live.remove(oldest); smoothed.remove(oldest); }

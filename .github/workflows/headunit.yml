@@ -1,4 +1,4 @@
-name: Persephone head-unit checks
+name: KoreGo Android and passive receiver checks
 on:
   push:
     paths: ['headunit/**', '.github/workflows/headunit.yml']
@@ -39,7 +39,7 @@ jobs:
           pio run -d headunit/receiver
       - uses: actions/upload-artifact@v4
         with:
-          name: persephone-training-preview
+          name: korego-training-preview
           path: |
             headunit/app/build/outputs/apk/debug/*.apk
             headunit/app/build/previews/*.png

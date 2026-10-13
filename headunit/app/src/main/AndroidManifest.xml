@@ -17,10 +17,13 @@
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
-    <application android:label="Persephone RF" android:icon="@drawable/ic_launcher" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/extraction_rules" android:usesCleartextTraffic="false" android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize" android:windowSoftInputMode="adjustResize">
+    <application android:label="KoreGo" android:icon="@drawable/ic_launcher" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/extraction_rules" android:usesCleartextTraffic="false" android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:exported="false" android:configChanges="orientation|screenSize" android:windowSoftInputMode="adjustResize">
+        </activity>
+        <activity android:name=".KoreGoActivity" android:exported="true" android:configChanges="orientation|screenSize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
+        <activity android:name=".SignalDexActivity" android:exported="false" />
         <service android:name=".OverlayService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="location|specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-requested floating map overlay for RF reception points and private field annotations" />
         </service>

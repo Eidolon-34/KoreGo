@@ -34,7 +34,7 @@ final class TileCache {
             try {
                 if(!online||closed)return;
                 connection=(HttpsURLConnection)new URL("https://tile.openstreetmap.org/"+key+".png").openConnection();
-                connection.setRequestProperty("User-Agent","PersephoneRF/0.2 (+https://github.com/Eidolon-34/oui-spy-w4tch3r)");
+                connection.setRequestProperty("User-Agent","KoreGo/0.1 (+https://github.com/Eidolon-34/KoreGo)");
                 connection.setConnectTimeout(5000);connection.setReadTimeout(5000);connection.setUseCaches(true);
                 try(InputStream stream=connection.getInputStream()) {Bitmap image=BitmapFactory.decodeStream(stream);if(image!=null)memory.put(key,image);else throw new IOException("Invalid tile");}
                 ui.post(redraw);

@@ -15,7 +15,7 @@ import java.util.*;
 
 /** Discovery only. No connection/write/injection logic lives in this scanner. */
 final class RadioScanner {
-    interface Sink { void observation(JSONObject value); void status(String message); }
+    interface Sink { void observation(JSONObject value); void status(String message); default void location(Location location){} }
     private final Context context;
     private final Sink sink;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -53,7 +53,7 @@ final class RadioScanner {
             if(!value.hasAccuracy()||!Float.isFinite(value.getAccuracy())||value.getAccuracy()<=0)return;
             long now=SystemClock.elapsedRealtime();
             if(fix!=null&&now-fix.getElapsedRealtimeNanos()/1_000_000<=5000&&value.getAccuracy()>fix.getAccuracy()*1.3f)return;
-            fix=value;
+            fix=value;sink.location(new Location(value));
         }
         public void onProviderEnabled(String provider) {}
         public void onProviderDisabled(String provider) { sink.status("Location provider disabled; new observations may have no GPS"); }

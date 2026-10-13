@@ -30,6 +30,8 @@ public final class RfCore {
         if (manufacturers.contains(0x09c8)) evidence.add("XUNTONG manufacturer ID; shared vendor, weak evidence");
         for (String service : services) {
             String s = service.toLowerCase(Locale.ROOT);
+            if (s.startsWith("0x")) s = s.substring(2);
+            if (s.matches("[0-9a-f]{4}")) s = "0000" + s + "-0000-1000-8000-00805f9b34fb";
             if (s.equals("e8ccbb38-9532-46a8-9fe5-1814df172e6f")) evidence.add("community Flock accessory service; unverified");
             if (s.matches("00003[1-5]00-0000-1000-8000-00805f9b34fb")) evidence.add("community Raven service; unverified");
         }

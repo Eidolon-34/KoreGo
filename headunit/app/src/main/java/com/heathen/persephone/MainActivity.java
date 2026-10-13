@@ -45,7 +45,8 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private LinearLayout content;
     private TextView statusLine, headline;
     private final Button[] navButtons = new Button[4];
-    private int tab, lifecycle;
+    private int tab;
+    private volatile int lifecycle;
     private boolean running, demo, replay, visible, permissionsAsked, dirty = true;
     private String status = "Ready · select a session mode", track = "", filter = "", watchlist = "";
     private int events;
@@ -107,7 +108,7 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         int wifi = 0, ble = 0, matches = 0;
         for (JSONObject r : live.values()) { if (r.optString("radio").equals("BLE")) ble++; else wifi++; if (matches(r)) matches++; }
         hero.addView(text(events + " observations   /   " + wifi + " Wi-Fi   /   " + ble + " BLE   /   " + matches + " matches", 18, TEXT));
-        hero.addView(text("Live device counts cover the latest " + RfCore.MAX_LIVE + " addresses. Epoch " + events / 25 + " · local learning, no handshake collection.", 13, MUTED));
+        hero.addView(text("Live device counts cover the latest " + RfCore.MAX_LIVE + " addresses. Epoch " + events / 25 + " · observation epochs, no handshake collection.", 13, MUTED));
         content.addView(hero);
         LinearLayout actions = row();
         actions.addView(button(running ? "Stop & save" : "Start discovery", () -> { if (running) stopSession(false); else authenticate("Start discovery", this::requestDiscovery); }), new LinearLayout.LayoutParams(0, dp(58), 1));
@@ -187,8 +188,10 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
     private void settings() {
         content.addView(button("Change passcode…", () -> authenticate("Change passcode", this::changePin)));
         content.addView(button("Edit watchlist…", () -> authenticate("Change watchlist", () -> {
+            final int authorizedEpoch = lifecycle;
             EditText edit = edit("Comma-separated names, MAC prefixes, service UUIDs"); edit.setText(watchlist);
             new AlertDialog.Builder(this).setTitle("Watchlist / substring match").setView(edit).setPositiveButton("Save", (d, w) -> {
+                if (!visible || authorizedEpoch != lifecycle) { status("Approval expired; enter the passcode again"); return; }
                 watchlist = edit.getText().toString(); prefs.edit().putString("watchlist", watchlist).apply(); dirty = true; render();
             }).setNegativeButton("Cancel", null).show();
         })));
@@ -222,11 +225,13 @@ public final class MainActivity extends Activity implements RadioScanner.Sink {
         })); dialog.show();
     }
     private void changePin() {
+        final int authorizedEpoch = lifecycle;
         LinearLayout box = column(); box.setPadding(dp(18), dp(4), dp(18), dp(4));
         EditText first = edit("New passcode (6–12 digits)"), second = edit("Repeat passcode");
         first.setInputType(18); second.setInputType(18); box.addView(first); box.addView(second);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Set a personal passcode").setView(box).setPositiveButton("Save", null).setNegativeButton("Cancel", null).create();
         dialog.setOnShowListener(d -> dialog.getButton(-1).setOnClickListener(v -> {
+            if (!visible || authorizedEpoch != lifecycle) { dialog.dismiss(); status("Approval expired; enter the passcode again"); return; }
             String pin = first.getText().toString();
             if (!pin.matches("[0-9]{6,12}") || !pin.equals(second.getText().toString())) { second.setError("Use 6–12 matching digits"); return; }
             final int epoch = lifecycle; dialog.getButton(-1).setEnabled(false);

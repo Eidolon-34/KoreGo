@@ -11,6 +11,7 @@ public final class CoreTest {
         check(RfCore.evidence("B4:1E:52:00:00:01", "", List.of(), Set.of()).contains("does not establish"), "vendor uncertainty");
         check(RfCore.evidence("02:00:00:00:00:01", "Penguin-123", List.of(), Set.of()).contains("unverified"), "name evidence for randomized address");
         check(RfCore.evidence("", "", List.of("e8ccbb38-9532-46a8-9fe5-1814df172e6f"), Set.of()).contains("accessory"), "service evidence");
+        check(RfCore.evidence("", "", List.of("0x3100"), Set.of()).contains("Raven"), "USB short UUID evidence");
         check(RfCore.evidence("", "", List.of(), Set.of(0x09c8)).contains("weak"), "shared manufacturer uncertainty");
         check(!RfCore.matches(" , ", "AA:BB:CC:11:22:33", "hello", "", List.of()), "empty watchlist");
         check(RfCore.matches(" xx, AA:BB:CC ", "aa:bb:cc:11:22:33", "hello", "", List.of()), "case insensitive prefix");

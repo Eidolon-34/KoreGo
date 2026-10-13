@@ -69,6 +69,16 @@ public class HeadunitTest {
             controller.start().resume(); assertFalse((boolean) field(app, "running"));
         }
     }
+    @Test public void changePinApprovalExpiresOnAppLeave() throws Exception {
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
+            MainActivity app = controller.get(); invoke(app, "changePin", new Class<?>[]{});
+            android.app.AlertDialog dialog = ShadowAlertDialog.getLatestAlertDialog();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            controller.pause().stop().start().resume();
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+            assertFalse(dialog.isShowing()); assertTrue(new PinGate(context).isDefault());
+        }
+    }
     @Test public void liveWindowIsBoundedWhileRecordingContinues() throws Exception {
         try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
             MainActivity app = controller.get(); invoke(app, "startSession", new Class<?>[]{boolean.class}, true);

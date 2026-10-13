@@ -268,3 +268,7 @@ Each engine also exists as a standalone firmware:
 ## Disclaimer
 
 Security-research and privacy-auditing tool. Detecting surveillance hardware in public spaces is legal in most jurisdictions. Comply with local laws on wireless scanning and signal interception. GATT exploitation actions carry risk. Lawful use only — authors not responsible for misuse.
+
+## Android car-radio edition
+
+[Persephone RF](headunit/README.md) is a separate native Android training app with built-in Wi-Fi/BLE discovery, SD-folder exports, RSSI tracking, offline demo/replay, and passcode-approved read-only BLE inventory. A bundled passive ESP32-S3 USB receiver extends coverage. Radio/pager hardware qualification is still required; see its installation guide and acceptance checks.
